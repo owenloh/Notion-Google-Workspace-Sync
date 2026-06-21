@@ -135,6 +135,25 @@ async def sync_status(
     return _sync_state_view()
 
 
+@app.post("/admin/reset-ledger")
+async def reset_ledger(
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Clear the ledger so the next full-sync rebuilds everything from scratch.
+
+    Use after manually deleting the Drive mirror contents: otherwise the hash
+    gate thinks Docs are unchanged and recreates them empty. (key required.)
+    """
+    _check_admin_key(x_admin_key or key)
+    from app.ledger import repo
+    from app.ledger.db import session_scope
+
+    with session_scope() as session:
+        counts = repo.reset_all(session)
+    return {"status": "ok", "cleared": counts}
+
+
 @app.get("/admin/drive-tree")
 async def drive_tree(
     x_admin_key: str | None = Header(default=None),
