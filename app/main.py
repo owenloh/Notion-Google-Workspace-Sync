@@ -76,3 +76,40 @@ async def full_sync(
 
     counts = full_reconcile()
     return {"status": "ok", "counts": counts}
+
+
+@app.post("/command")
+async def command(
+    payload: dict,
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Execute one command synchronously (desktop/automation; key required).
+
+    Body is a relay request, e.g.
+    ``{"path":"/api/notion/update-page","body":{...}}``. Returns the relay result.
+    Gemini Live can't call this — it uses the Google Tasks inbox — but it gives a
+    synchronous path for non-voice clients.
+    """
+    _check_admin_key(x_admin_key or key)
+    import json as _json
+
+    from app.engines.command_schema import CommandError, parse_command
+    from app.engines.commands import CommandExecutor
+    from app.ledger.db import session_scope
+    from app.runtime import get_runtime
+
+    rt = get_runtime()
+    parsed = parse_command(_json.dumps(payload), default_path=rt.settings.relay_default_path)
+    if isinstance(parsed, CommandError):
+        raise HTTPException(status_code=400, detail=parsed.message)
+    with session_scope() as session:
+        result = CommandExecutor(
+            session, rt.notion, rt.google, rt.relay, rt.settings
+        ).execute_one(parsed)
+    return {
+        "status": "ok" if result.ok else "error",
+        "http_status": result.status,
+        "summary": result.summary,
+        "affected_id": result.affected_id,
+    }

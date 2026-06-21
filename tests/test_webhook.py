@@ -66,6 +66,20 @@ def test_admin_full_sync_requires_key(monkeypatch):
     get_settings.cache_clear()
 
 
+def test_command_requires_key(monkeypatch):
+    from app.config import get_settings
+    get_settings.cache_clear()  # ADMIN_API_KEY unset -> disabled
+    client = TestClient(app)
+    body = {"path": "/api/notion/update-page", "body": {}}
+    assert client.post("/command", json=body).status_code == 503
+
+    monkeypatch.setenv("ADMIN_API_KEY", "letmein")
+    get_settings.cache_clear()
+    assert client.post("/command", json=body).status_code == 401
+    assert client.post("/command?key=wrong", json=body).status_code == 401
+    get_settings.cache_clear()
+
+
 def test_valid_signature_with_no_pages_acknowledged(monkeypatch):
     monkeypatch.setenv("NOTION_WEBHOOK_SECRET", "topsecret")
     from app.config import get_settings
