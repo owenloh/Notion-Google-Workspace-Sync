@@ -239,6 +239,24 @@ async def read_tab(
     return {"status": "ok", "tab": tab, "count": len(rows), "rows": rows}
 
 
+@app.get("/admin/read-doc")
+async def read_doc(
+    id: str = Query(...),
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Read a mirror Doc's markdown by Google Doc id (verify reflected content)."""
+    _check_admin_key(x_admin_key or key)
+    from app.runtime import get_runtime
+
+    rt = get_runtime()
+    try:
+        md = rt.google.read_doc(id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+    return {"status": "ok", "id": id, "length": len(md), "markdown": md}
+
+
 @app.post("/command")
 async def command(
     payload: dict,
