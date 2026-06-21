@@ -8,11 +8,6 @@ from app.core.markdown import (
     markdown_to_docs_requests,
 )
 
-# A short header inserted at the top of every mirrored Doc, linking back to the
-# Notion page. Kept out of the body hash by the engine (it is re-added on write
-# and stripped on read), so it never triggers a phantom edit.
-HEADER_PREFIX = "↩ Notion: "
-
 
 def read_markdown(docs, doc_id: str) -> str:
     document = docs.documents().get(documentId=doc_id).execute()
