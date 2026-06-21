@@ -5,10 +5,14 @@ from __future__ import annotations
 import itertools
 from typing import Any
 
+from app.connectors.google.sheets import record_to_row, row_to_record
 from app.connectors.notion.read import NotionItem
 
 
 class FakeGoogleMirror:
+    """In-memory stand-in that round-trips sheet rows like the real Sheets API
+    (relation lists are joined to strings on write, split on read)."""
+
     def __init__(self, root_folder_id: str = "ROOT"):
         self.root_folder_id = root_folder_id
         self.index_sheet_id = "SHEET"
@@ -17,7 +21,8 @@ class FakeGoogleMirror:
         self.folder_meta: dict[str, tuple[str, str]] = {}  # id -> (name, parent)
         self.docs: dict[str, str] = {}
         self.doc_meta: dict[str, tuple[str, str]] = {}  # id -> (name, parent)
-        self.tabs: dict[str, list[dict[str, Any]]] = {"Areas": [], "Projects": [], "Actions": []}
+        # Each tab holds raw row lists, exactly like the Sheets backend.
+        self.tabs: dict[str, list[list[str]]] = {"Areas": [], "Projects": [], "Actions": []}
         self.write_doc_calls = 0
         self.append_calls = 0
         self.structure_ready = False
@@ -67,20 +72,28 @@ class FakeGoogleMirror:
 
     def read_tab(self, tab: str) -> list[dict[str, Any]]:
         out = []
-        for i, rec in enumerate(self.tabs[tab], start=2):
-            r = dict(rec)
-            r["_row"] = i
-            out.append(r)
+        for i, row in enumerate(self.tabs[tab], start=2):
+            rec = row_to_record(tab, row)
+            rec["_row"] = i
+            out.append(rec)
         return out
 
+    def seed_row(self, tab: str, record: dict[str, Any]) -> None:
+        """Test helper: add a Google-authored row exactly as the UI would."""
+        self.tabs[tab].append(record_to_row(tab, record))
+
     def upsert_row(self, tab: str, notion_id: str, record: dict[str, Any]) -> int:
-        for i, rec in enumerate(self.tabs[tab]):
-            if rec.get("_notion_id") == notion_id:
-                self.tabs[tab][i] = dict(record)
+        new_row = record_to_row(tab, record)
+        for i, existing in enumerate(self.tabs[tab]):
+            if row_to_record(tab, existing).get("_notion_id") == notion_id:
+                self.tabs[tab][i] = new_row
                 return i + 2
-        self.tabs[tab].append(dict(record))
+        self.tabs[tab].append(new_row)
         self.append_calls += 1
         return len(self.tabs[tab]) + 1
+
+    def update_row_at(self, tab: str, row_number: int, record: dict[str, Any]) -> None:
+        self.tabs[tab][row_number - 2] = record_to_row(tab, record)
 
 
 class FakeNotionSource:
@@ -91,6 +104,11 @@ class FakeNotionSource:
         self.children = children
         self.spine_ids = spine_ids
         self.loose_ids = loose_ids
+        self.created: list[dict] = []
+        self.updated: list[dict] = []
+        self.replaced: list[dict] = []
+        self.archived: list[str] = []
+        self._new = itertools.count(1)
 
     def spine_items(self) -> list[NotionItem]:
         return [self.items[i] for i in self.spine_ids]
@@ -106,6 +124,30 @@ class FakeNotionSource:
 
     def get_item(self, page_id: str) -> NotionItem:
         return self.items[page_id]
+
+    # --- write surface (mirror_in) ---
+    def create_page(self, parent, properties, children=None):
+        new_id = f"new-{next(self._new)}"
+        self.created.append(
+            {"id": new_id, "parent": parent, "properties": properties, "children": children}
+        )
+        return {"id": new_id}
+
+    def update_properties(self, page_id, properties):
+        self.updated.append({"id": page_id, "properties": properties})
+        return {"id": page_id}
+
+    def replace_body(self, page_id, markdown):
+        self.replaced.append({"id": page_id, "markdown": markdown})
+
+    def archive(self, page_id):
+        self.archived.append(page_id)
+
+    @staticmethod
+    def build_properties(kind, values, relation_ids):
+        from app.connectors.notion.write import build_properties
+
+        return build_properties(kind, values, relation_ids)
 
 
 def make_item(notion_id, kind, title, properties=None, relations=None,

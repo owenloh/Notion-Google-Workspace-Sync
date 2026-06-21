@@ -57,19 +57,19 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
     career_folder = google.folders[(areas_id, "Career")]
     assert (career_folder, "PourDynamics engine") in google.folders
 
-    # Sheet rows.
-    areas = google.tabs["Areas"]
+    # Sheet rows (read back as the Sheets API would: relations joined to text).
+    areas = google.read_tab("Areas")
     assert len(areas) == 1 and areas[0]["Name"] == "Career"
-    assert areas[0]["Projects"] == ["PourDynamics engine"]
+    assert areas[0]["Projects"] == "PourDynamics engine"
     assert areas[0]["Doc"].startswith("=HYPERLINK(")
 
-    projects = google.tabs["Projects"]
-    assert projects[0]["Area"] == ["Career"]
-    assert projects[0]["Next actions"] == ["Email Bob"]
+    projects = google.read_tab("Projects")
+    assert projects[0]["Area"] == "Career"
+    assert projects[0]["Next actions"] == "Email Bob"
 
-    actions = google.tabs["Actions"]
+    actions = google.read_tab("Actions")
     assert actions[0]["Name"] == "Email Bob"
-    assert actions[0]["Project"] == ["PourDynamics engine"]
+    assert actions[0]["Project"] == "PourDynamics engine"
 
     # Docs written for bodies (area, project, child) but not the action.
     assert any("focus here" in v for v in google.docs.values())
@@ -96,7 +96,7 @@ def test_echo_suppressed_on_google_readback(session, settings, world):
     MirrorOut(session, notion, google, settings).sync_all()
 
     pair = repo.get_pair_by_notion_id(session, "t1")
-    row = google.tabs["Actions"][0]
+    row = google.read_tab("Actions")[0]
     observed_hash = property_hash("action", row)
 
     ev = SyncEvent(system="google", facet="property", incoming_hash=observed_hash)

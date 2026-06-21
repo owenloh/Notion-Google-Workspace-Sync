@@ -64,3 +64,6 @@ class GoogleMirror:
         gsheets.append_record(self.services.sheets, self.index_sheet_id, tab, record)
         # The appended row number is the next after current data rows.
         return len(self.read_tab(tab)) + 1
+
+    def update_row_at(self, tab: str, row_number: int, record: dict[str, Any]) -> None:
+        gsheets.update_record(self.services.sheets, self.index_sheet_id, tab, row_number, record)

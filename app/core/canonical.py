@@ -82,13 +82,18 @@ def property_projection(kind: str, props: dict[str, object]) -> dict[str, object
         if key.startswith("_") or key in {"doc", "checkbox_raw"}:
             continue
         if key in RELATION_KEYS:
-            out[key] = _norm_relation(value)
+            norm = _norm_relation(value)
         elif key in {"due", "due date", "date"}:
-            out[key] = _norm_date(value)
+            norm = _norm_date(value)
         elif key in {"checkbox"}:
-            out[key] = _norm_scalar(value) in {"true", "1", "yes", "✓", "x"}
+            norm = _norm_scalar(value) in {"true", "1", "yes", "✓", "x"}
         else:
-            out[key] = _norm_scalar(value)
+            norm = _norm_scalar(value)
+        # Drop empty/falsy values so a property absent on the Notion side hashes
+        # identically to a blank cell on the Sheet side (and absent == unchecked).
+        if norm in ("", [], False, None):
+            continue
+        out[key] = norm
     return out
 
 
