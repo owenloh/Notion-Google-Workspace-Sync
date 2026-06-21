@@ -54,13 +54,25 @@ class GoogleServices:
 
 
 def build_services(settings: Settings | None = None) -> GoogleServices:
-    """Construct Drive/Docs/Sheets/Tasks API clients (imported lazily)."""
+    """Construct Drive/Docs/Sheets/Tasks API clients (imported lazily).
+
+    Each service gets its own HTTP with a timeout, so a stalled connection fails
+    fast (and is retried by app.connectors.google._retry) instead of hanging the
+    whole sync forever — httplib2's default has no timeout.
+    """
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
     from googleapiclient.discovery import build
 
     creds = build_credentials(settings)
+
+    def _svc(name: str, version: str):
+        http = AuthorizedHttp(creds, http=httplib2.Http(timeout=60))
+        return build(name, version, http=http, cache_discovery=False)
+
     return GoogleServices(
-        drive=build("drive", "v3", credentials=creds, cache_discovery=False),
-        docs=build("docs", "v1", credentials=creds, cache_discovery=False),
-        sheets=build("sheets", "v4", credentials=creds, cache_discovery=False),
-        tasks=build("tasks", "v1", credentials=creds, cache_discovery=False),
+        drive=_svc("drive", "v3"),
+        docs=_svc("docs", "v1"),
+        sheets=_svc("sheets", "v4"),
+        tasks=_svc("tasks", "v1"),
     )
