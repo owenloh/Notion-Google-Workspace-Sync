@@ -15,6 +15,7 @@ from app.connectors.google import docs as gdocs
 from app.connectors.google import drive as gdrive
 from app.connectors.google import sheets as gsheets
 from app.connectors.google import tasks as gtasks
+from app.connectors.google._retry import execute as _gexec
 from app.connectors.google.auth import GoogleServices
 from app.logging import get_logger
 
@@ -46,9 +47,11 @@ class GoogleMirror:
         if not file_id:
             return False
         try:
-            meta = self.services.drive.files().get(
-                fileId=file_id, fields="id,trashed", supportsAllDrives=True
-            ).execute()
+            meta = _gexec(
+                self.services.drive.files().get(
+                    fileId=file_id, fields="id,trashed", supportsAllDrives=True
+                )
+            )
             return not meta.get("trashed", False)
         except HttpError:
             return False
@@ -77,10 +80,10 @@ class GoogleMirror:
             return self.index_sheet_id
         root = self.ensure_root()
         existing = gdrive.find_child(self.services.drive, root, "_Notion Index", gdrive.SHEET_MIME)
-        new_id = existing or self.services.drive.files().create(
+        new_id = existing or _gexec(self.services.drive.files().create(
             body={"name": "_Notion Index", "mimeType": gdrive.SHEET_MIME, "parents": [root]},
             fields="id",
-        ).execute()["id"]
+        ))["id"]
         if new_id != self.index_sheet_id:
             log.warning(
                 "index sheet %s missing/trashed; using %s "
