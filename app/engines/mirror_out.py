@@ -284,6 +284,11 @@ class MirrorOut:
         return self.google.ensure_folder("_Unsorted", areas_root)
 
     def _section_folder_for(self, item: NotionItem) -> str:
+        if item.kind == "area":
+            # Areas live under the "Areas" folder, same as in sync_all. Without
+            # this, the delta-poll's mirror_item re-created area folders at the
+            # mirror root, duplicating them.
+            return self.google.ensure_folder("Areas", self.google.root_folder_id)
         if item.kind == "briefing":
             return self.google.ensure_folder("Briefing", self.google.root_folder_id)
         if item.kind == "reference":

@@ -47,6 +47,25 @@ class GoogleMirror:
     def doc_url(self, doc_id: str) -> str:
         return gdrive.doc_url(doc_id)
 
+    def drive_tree(self, folder_id: str | None = None, depth: int = 0, max_depth: int = 6) -> dict:
+        """Walk the mirror folder into a nested {name,type,id,children} tree (diagnostic)."""
+        folder_id = folder_id or self.root_folder_id
+        node: dict[str, Any] = {"id": folder_id, "type": "folder", "children": []}
+        if depth >= max_depth:
+            return node
+        for child in gdrive.list_children(self.services.drive, folder_id):
+            is_folder = child.get("mimeType") == gdrive.FOLDER_MIME
+            if is_folder:
+                sub = self.drive_tree(child["id"], depth + 1, max_depth)
+                sub["name"] = child["name"]
+                node["children"].append(sub)
+            else:
+                kind = "doc" if child.get("mimeType") == gdrive.DOC_MIME else "file"
+                node["children"].append(
+                    {"name": child["name"], "type": kind, "id": child["id"]}
+                )
+        return node
+
     def rename(self, file_id: str, name: str) -> None:
         gdrive.rename_file(self.services.drive, file_id, name)
 

@@ -33,6 +33,30 @@ def find_child(drive, parent_id: str, name: str, mime: str | None = None) -> str
     return files[0]["id"] if files else None
 
 
+def list_children(drive, parent_id: str) -> list[dict]:
+    """Return non-trashed direct children (id, name, mimeType) of a folder."""
+    children: list[dict] = []
+    page_token = None
+    while True:
+        resp = (
+            drive.files()
+            .list(
+                q=f"'{parent_id}' in parents and trashed = false",
+                fields="nextPageToken, files(id,name,mimeType)",
+                pageSize=200,
+                pageToken=page_token,
+                orderBy="folder,name",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
+        )
+        children.extend(resp.get("files", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            return children
+
+
 def ensure_folder(drive, name: str, parent_id: str) -> str:
     """Find-or-create a folder named ``name`` under ``parent_id``."""
     existing = find_child(drive, parent_id, name, FOLDER_MIME)
