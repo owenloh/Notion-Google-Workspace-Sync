@@ -61,7 +61,11 @@ class MirrorOut:
 
         areas_root = self.google.ensure_folder("Areas", self.google.root_folder_id)
 
-        counts = {"area": 0, "project": 0, "action": 0, "page": 0, "failed": 0}
+        counts = {"area": 0, "project": 0, "action": 0, "page": 0, "failed": 0, "removed": 0}
+
+        # Every notion id the crawl enumerates; pairs NOT in here at the end are
+        # candidates for deletion (verified before removal).
+        seen: set[str] = {_norm(it.notion_id) for it in spine + loose}
 
         by_kind = {"area": [], "project": [], "action": []}
         for it in spine:
@@ -106,12 +110,45 @@ class MirrorOut:
             [it.notion_id for it in spine if it.kind in {"area", "project"}]
             + [it.notion_id for it in loose],
             id_to_title,
+            seen,
         )
         try:
             self._write_reference_docs(spine)
         except Exception:  # noqa: BLE001
             log.exception("writing _Dashboard/_Commands docs failed; continuing")
+        counts["removed"] = self._remove_unseen(seen)
         return counts
+
+    def _remove_unseen(self, seen: set[str]) -> int:
+        """Tombstone + trash mirror objects whose Notion page is gone.
+
+        Only runs after a FULL crawl (sync_all), where ``seen`` is every enumerated
+        id. Each candidate is re-fetched first so a partial/failed crawl can't
+        false-delete a page that actually still exists.
+        """
+        removed = 0
+        for pair in repo.all_pairs(self.session):
+            if _norm(pair.notion_id) in seen:
+                continue
+            try:
+                item = self.notion.get_item(pair.notion_id)
+                if not getattr(item, "archived", False):
+                    continue  # still exists, just not crawled this run — keep it
+            except Exception:  # noqa: BLE001 — 404/gone → proceed to remove
+                pass
+            try:
+                if pair.gdoc_id and self.google.is_live(pair.gdoc_id):
+                    self.google.trash(pair.gdoc_id)
+                if pair.drive_folder_id and self.google.is_live(pair.drive_folder_id):
+                    self.google.trash(pair.drive_folder_id)
+                if pair.gsheet_tab and pair.gsheet_row_key:
+                    self.google.clear_row(pair.gsheet_tab, pair.gsheet_row_key)
+            except Exception:  # noqa: BLE001
+                log.exception("removing mirror for %s failed", pair.notion_id)
+            repo.tombstone_pair(self.session, pair)
+            removed += 1
+            log.info("removed mirror for deleted/archived %s (%s)", pair.kind, pair.notion_id)
+        return removed
 
     def _write_reference_docs(self, spine: list[NotionItem]) -> None:
         """(Re)generate the read-only `_Dashboard` and `_Commands` Docs.
@@ -167,11 +204,12 @@ class MirrorOut:
         self, item: NotionItem, parent_folder_id: str, id_to_title: dict[str, str]
     ) -> SyncPair:
         """Mirror an item that has a folder + body Doc (area/project/page)."""
-        folder_id = self.google.ensure_folder(item.title or "Untitled", parent_folder_id)
-        doc_id = self.google.ensure_doc(item.title or "Untitled", folder_id)
+        title = item.title or "Untitled"
+        pair = repo.get_pair_by_notion_id(self.session, item.notion_id)
+        folder_id = self._resolve_folder(pair, title, parent_folder_id)
+        doc_id = self._resolve_doc(pair, title, folder_id)
         self._folder_of[_norm(item.notion_id)] = folder_id
 
-        pair = repo.get_pair_by_notion_id(self.session, item.notion_id)
         record = self._build_record(item, id_to_title, doc_id)
         # Only spine kinds (area/project/action) get a sheet row; loose pages
         # (briefing/reference) and generic child pages are body-only Docs.
@@ -226,6 +264,29 @@ class MirrorOut:
                 log.info("mirrored %s row %s (%s)", item.kind, row, item.title)
         return pair
 
+    def _resolve_folder(self, pair: SyncPair | None, title: str, parent_id: str) -> str:
+        """Reuse the ledger-tracked folder (rename/move in place) or create a fresh one.
+
+        Addressing by stored id (not by name) means a renamed item keeps its folder,
+        a moved item relocates instead of orphaning, and two same-named items get
+        distinct folders instead of colliding.
+        """
+        if pair and pair.drive_folder_id and self.google.is_live(pair.drive_folder_id):
+            fid = pair.drive_folder_id
+            if (pair.title or "Untitled") != title:
+                self.google.rename(fid, title)
+            if pair.drive_parent_id and pair.drive_parent_id != parent_id:
+                self.google.move(fid, parent_id)
+            return fid
+        return self.google.create_folder(title, parent_id)
+
+    def _resolve_doc(self, pair: SyncPair | None, title: str, folder_id: str) -> str:
+        if pair and pair.gdoc_id and self.google.is_live(pair.gdoc_id):
+            if (pair.title or "Untitled") != title:
+                self.google.rename(pair.gdoc_id, title)
+            return pair.gdoc_id
+        return self.google.create_doc(title, folder_id)
+
     def _mirror_action(self, item: NotionItem, id_to_title: dict[str, str]) -> SyncPair:
         """Actions are title-only: a sheet row, no folder/doc."""
         record = self._build_record(item, id_to_title, doc_id=None)
@@ -252,7 +313,9 @@ class MirrorOut:
 
     # --- recursion -----------------------------------------------------------
 
-    def _recurse_all_children(self, parent_ids: list[str], id_to_title) -> int:
+    def _recurse_all_children(
+        self, parent_ids: list[str], id_to_title, seen: set[str] | None = None
+    ) -> int:
         count = 0
         stack = list(parent_ids)
         while stack:
@@ -266,6 +329,8 @@ class MirrorOut:
                 log.warning("could not list child pages of %s; skipping subtree: %s", pid, exc)
                 continue
             for child_id in child_ids:
+                if seen is not None:
+                    seen.add(_norm(child_id))  # enumerated → not a deletion candidate
                 try:
                     child = self.notion.get_item(child_id)
                     child.kind = "page"

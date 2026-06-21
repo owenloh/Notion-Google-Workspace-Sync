@@ -45,17 +45,21 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
     notion, google = world
     counts = MirrorOut(session, notion, google, settings).sync_all()
 
-    assert counts == {"area": 1, "project": 1, "action": 1, "page": 1, "failed": 0}
+    assert counts == {"area": 1, "project": 1, "action": 1, "page": 1, "failed": 0, "removed": 0}
     assert google.structure_ready
 
     # Folder tree: Areas/Career/PourDynamics engine/Spec nesting.
     names = {meta[0] for meta in google.folder_meta.values()}
     assert {"Areas", "Career", "PourDynamics engine", "Spec"} <= names
 
-    # Project folder is nested under the Career area folder.
+    # Per-item folders are tracked by ledger id; verify nesting via folder_meta
+    # (id -> (name, parent)). The "Areas" section folder is still find-or-create.
+    def fid(name):
+        return next(i for i, (n, _) in google.folder_meta.items() if n == name)
     areas_id = google.folders[("ROOT", "Areas")]
-    career_folder = google.folders[(areas_id, "Career")]
-    assert (career_folder, "PourDynamics engine") in google.folders
+    assert google.folder_meta[fid("Career")][1] == areas_id
+    assert google.folder_meta[fid("PourDynamics engine")][1] == fid("Career")
+    assert google.folder_meta[fid("Spec")][1] == fid("PourDynamics engine")
 
     # Sheet rows (read back as the Sheets API would: relations joined to text).
     areas = google.read_tab("Areas")
@@ -103,6 +107,106 @@ def test_loose_pages_mirror_body_only(session, settings):
     # No spine sheet rows were written for loose pages.
     assert google.read_tab("Areas") == []
     assert google.read_tab("Actions") == []
+
+
+def test_rename_in_place_no_orphan(session, settings, world):
+    """Renaming a Notion item renames its folder/Doc in place (no new orphan)."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).sync_all()
+    pair = repo.get_pair_by_notion_id(session, "p1")
+    folder, doc = pair.drive_folder_id, pair.gdoc_id
+
+    notion.items["p1"].title = "PourDynamics v2"
+    MirrorOut(session, notion, google, settings).sync_all()
+
+    pair2 = repo.get_pair_by_notion_id(session, "p1")
+    assert pair2.drive_folder_id == folder      # same folder reused
+    assert pair2.gdoc_id == doc                  # same Doc reused
+    assert google.folder_meta[folder][0] == "PourDynamics v2"  # renamed in place
+    assert google.doc_meta[doc][0] == "PourDynamics v2"
+
+
+def test_duplicate_names_get_distinct_objects(session, settings):
+    """Two items with the same title get distinct folders/Docs (no collision)."""
+    a = make_item("a1", "area", "Career",
+                  properties={"Name": "Career", "Status": "Active", "Type": "Life"},
+                  relations={"Projects": ["p1", "p2"]})
+    p1 = make_item("p1", "project", "Dup",
+                   properties={"Project": "Dup", "Status": "Active"}, relations={"Area": ["a1"]})
+    p2 = make_item("p2", "project", "Dup",
+                   properties={"Project": "Dup", "Status": "Active"}, relations={"Area": ["a1"]})
+    notion = FakeNotionSource({"a1": a, "p1": p1, "p2": p2},
+                              {"a1": "", "p1": "b1", "p2": "b2"}, {},
+                              spine_ids=["a1", "p1", "p2"], loose_ids=[])
+    google = FakeGoogleMirror()
+    MirrorOut(session, notion, google, settings).sync_all()
+
+    f1 = repo.get_pair_by_notion_id(session, "p1").drive_folder_id
+    f2 = repo.get_pair_by_notion_id(session, "p2").drive_folder_id
+    d1 = repo.get_pair_by_notion_id(session, "p1").gdoc_id
+    d2 = repo.get_pair_by_notion_id(session, "p2").gdoc_id
+    assert f1 != f2 and d1 != d2                  # distinct despite identical names
+
+
+def test_move_relocates_folder(session, settings):
+    """Re-parenting an item moves its folder, reusing the same id (no orphan)."""
+    a1 = make_item("a1", "area", "A1",
+                   properties={"Name": "A1", "Status": "Active", "Type": "Life", "Standards": ""})
+    a2 = make_item("a2", "area", "A2",
+                   properties={"Name": "A2", "Status": "Active", "Type": "Life", "Standards": ""})
+    p1 = make_item("p1", "project", "P",
+                   properties={"Project": "P", "Status": "Active"}, relations={"Area": ["a1"]})
+    notion = FakeNotionSource({"a1": a1, "a2": a2, "p1": p1},
+                              {"a1": "", "a2": "", "p1": "body"}, {},
+                              spine_ids=["a1", "a2", "p1"], loose_ids=[])
+    google = FakeGoogleMirror()
+    MirrorOut(session, notion, google, settings).sync_all()
+    pf = repo.get_pair_by_notion_id(session, "p1").drive_folder_id
+    a2f = repo.get_pair_by_notion_id(session, "a2").drive_folder_id
+
+    notion.items["p1"].relations = {"Area": ["a2"]}   # move to A2
+    MirrorOut(session, notion, google, settings).sync_all()
+
+    pair = repo.get_pair_by_notion_id(session, "p1")
+    assert pair.drive_folder_id == pf                 # same folder
+    assert google.folder_meta[pf][1] == a2f           # now under A2
+
+
+def test_deletion_detection_tombstones_and_trashes(session, settings, world):
+    """A page removed from Notion gets its Doc/folder trashed + pair tombstoned."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).sync_all()
+    pair = repo.get_pair_by_notion_id(session, "p1")
+    folder, doc = pair.drive_folder_id, pair.gdoc_id
+    assert google.is_live(folder) and google.is_live(doc)
+
+    # Delete the project + its child page in Notion.
+    notion.spine_ids = ["a1", "t1"]
+    notion.children = {}
+    del notion.items["p1"]
+    del notion.items["c1"]
+
+    counts = MirrorOut(session, notion, google, settings).sync_all()
+    assert counts["removed"] >= 1
+    assert not google.is_live(folder)                 # Doc/folder trashed
+    assert not google.is_live(doc)
+    assert repo.get_pair_by_notion_id(session, "p1").tombstone is True
+
+
+def test_deletion_skips_existing_page_on_partial_crawl(session, settings, world):
+    """A page merely missing from this crawl (still exists) is NOT deleted."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).sync_all()
+    pair = repo.get_pair_by_notion_id(session, "p1")
+    folder = pair.drive_folder_id
+
+    # p1 not enumerated this run, but get_item still returns it (it exists).
+    notion.spine_ids = ["a1", "t1"]
+    notion.children = {}
+    counts = MirrorOut(session, notion, google, settings).sync_all()
+    assert counts["removed"] == 0
+    assert google.is_live(folder)                     # preserved
+    assert repo.get_pair_by_notion_id(session, "p1").tombstone is False
 
 
 def test_mirror_is_idempotent(session, settings, world):
