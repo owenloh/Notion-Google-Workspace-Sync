@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
@@ -44,9 +43,9 @@ def build_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
     scheduler.add_job(
-        _guard(jobs.nightly_reconcile),
-        CronTrigger(hour=4, minute=0),
-        id="nightly_reconcile",
+        _guard(jobs.full_reconcile),
+        IntervalTrigger(seconds=settings.full_sync_seconds),
+        id="full_reconcile",
         max_instances=1,
         coalesce=True,
     )

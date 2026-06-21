@@ -35,6 +35,31 @@ as a phantom edit.
 
 See `app/` for the module layout and the approved plan for the full design.
 
+## Sync cadence
+
+| Job | Default | Scope |
+| --- | --- | --- |
+| Notion delta poll | 3 min | Spine (Areas/Projects/Actions) + loose pages |
+| Google poll | 2 min | Sheet edits + Drive changes feed |
+| Full reconcile | 30 min (`FULL_SYNC_SECONDS`) | **Whole workspace, recursing into every child page**; heals drift, sweeps tombstones |
+| Notion webhook | real-time | Any page Notion notifies about |
+
+Deep child-page edits don't appear in the delta poll (child pages aren't in any
+database), so the 30-minute full reconcile is what guarantees they sync. A Notion
+webhook, when it fires for the page, syncs it immediately.
+
+## On-demand full sync
+
+Set `ADMIN_API_KEY`, then trigger a complete reconcile whenever you want:
+
+```bash
+curl -X POST "https://<host>/admin/full-sync?key=$ADMIN_API_KEY"
+# or: -H "X-Admin-Key: $ADMIN_API_KEY"
+```
+
+Returns `{"status":"ok","counts":{...}}`. Without the key the endpoint returns
+401; if `ADMIN_API_KEY` is unset it returns 503 (disabled).
+
 ## Development
 
 ```bash

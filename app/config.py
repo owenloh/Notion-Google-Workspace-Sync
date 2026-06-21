@@ -51,8 +51,14 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     notion_poll_seconds: int = 180
     google_poll_seconds: int = 120
+    # Full re-crawl cadence. The delta poll only sees the three databases + loose
+    # pages; the full crawl recurses into every (deep) child page, so it is the
+    # safety net that guarantees the whole workspace is reconciled. Default 30m.
+    full_sync_seconds: int = 1800
     inflight_ttl_seconds: int = 300
     tombstone_grace_seconds: int = 86400
+    # Shared secret required to trigger POST /admin/full-sync on demand.
+    admin_api_key: str = ""
 
     notion_api_base: str = "https://api.notion.com/v1"
     notion_version: str = "2022-06-28"

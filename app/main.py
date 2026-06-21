@@ -6,9 +6,10 @@ a health check and a manual full-sync trigger.
 
 from __future__ import annotations
 
+import hmac
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Query
 
 from app.api.webhooks import notion as notion_webhook
 from app.config import get_settings
@@ -50,14 +51,28 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/admin/full-sync")
-async def full_sync() -> dict[str, object]:
-    """Trigger a full Notion → Google mirror on demand."""
-    from app.engines.mirror_out import MirrorOut
-    from app.ledger.db import session_scope
-    from app.runtime import get_runtime
+def _check_admin_key(provided: str | None) -> None:
+    """Authorize an admin request; the key is checked before any work is done."""
+    settings = get_settings()
+    if not settings.admin_api_key:
+        raise HTTPException(status_code=503, detail="ADMIN_API_KEY is not configured")
+    if not provided or not hmac.compare_digest(provided, settings.admin_api_key):
+        raise HTTPException(status_code=401, detail="invalid admin key")
 
-    rt = get_runtime()
-    with session_scope() as session:
-        counts = MirrorOut(session, rt.notion, rt.google, rt.settings).sync_all()
+
+@app.post("/admin/full-sync")
+async def full_sync(
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Trigger a full Notion → Google reconcile on demand (key required).
+
+    Pass the key either as the ``X-Admin-Key`` header or a ``?key=`` query param:
+
+        curl -X POST "https://<host>/admin/full-sync?key=$ADMIN_API_KEY"
+    """
+    _check_admin_key(x_admin_key or key)
+    from app.scheduler.jobs import full_reconcile
+
+    counts = full_reconcile()
     return {"status": "ok", "counts": counts}

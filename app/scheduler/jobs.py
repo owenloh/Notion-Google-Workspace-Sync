@@ -68,11 +68,17 @@ def poll_google(rt: Runtime | None = None) -> int:
         return n
 
 
-def nightly_reconcile(rt: Runtime | None = None) -> None:
-    """Full re-crawl (catches deep child-page edits), then sweep stale state."""
+def full_reconcile(rt: Runtime | None = None) -> dict[str, int]:
+    """Full re-crawl (catches deep child-page edits), then sweep stale state.
+
+    Runs on ``full_sync_seconds`` (default 30 min) and is also what the on-demand
+    ``/admin/full-sync`` endpoint invokes. ``sync_all`` recurses into every child
+    page and skips unchanged content, so this is safe to run frequently.
+    """
     rt = rt or get_runtime()
     with session_scope() as session:
-        MirrorOut(session, rt.notion, rt.google, rt.settings).sync_all()
+        counts = MirrorOut(session, rt.notion, rt.google, rt.settings).sync_all()
         repo.purge_expired_inflight(session)
         purged = purge_expired(session, rt.settings.tombstone_grace_seconds)
-        log.info("nightly_reconcile done; purged %d tombstone(s)", purged)
+        log.info("full_reconcile done %s; purged %d tombstone(s)", counts, purged)
+        return counts
