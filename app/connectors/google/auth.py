@@ -21,6 +21,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/tasks",  # command inbox
 ]
 
 
@@ -49,10 +50,11 @@ class GoogleServices:
     drive: object
     docs: object
     sheets: object
+    tasks: object
 
 
 def build_services(settings: Settings | None = None) -> GoogleServices:
-    """Construct Drive/Docs/Sheets API clients (imported lazily for testability)."""
+    """Construct Drive/Docs/Sheets/Tasks API clients (imported lazily)."""
     from googleapiclient.discovery import build
 
     creds = build_credentials(settings)
@@ -60,4 +62,5 @@ def build_services(settings: Settings | None = None) -> GoogleServices:
         drive=build("drive", "v3", credentials=creds, cache_discovery=False),
         docs=build("docs", "v1", credentials=creds, cache_discovery=False),
         sheets=build("sheets", "v4", credentials=creds, cache_discovery=False),
+        tasks=build("tasks", "v1", credentials=creds, cache_discovery=False),
     )

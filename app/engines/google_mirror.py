@@ -12,14 +12,23 @@ from typing import Any
 from app.connectors.google import docs as gdocs
 from app.connectors.google import drive as gdrive
 from app.connectors.google import sheets as gsheets
+from app.connectors.google import tasks as gtasks
 from app.connectors.google.auth import GoogleServices
 
 
 class GoogleMirror:
-    def __init__(self, services: GoogleServices, root_folder_id: str, index_sheet_id: str):
+    def __init__(
+        self,
+        services: GoogleServices,
+        root_folder_id: str,
+        index_sheet_id: str,
+        command_tasklist_name: str = "Notion Commands",
+    ):
         self.services = services
         self.root_folder_id = root_folder_id
         self.index_sheet_id = index_sheet_id
+        self.command_tasklist_name = command_tasklist_name
+        self._command_list_id: str | None = None
 
     # --- folders / docs ---
     def ensure_folder(self, name: str, parent_id: str) -> str:
@@ -67,3 +76,17 @@ class GoogleMirror:
 
     def update_row_at(self, tab: str, row_number: int, record: dict[str, Any]) -> None:
         gsheets.update_record(self.services.sheets, self.index_sheet_id, tab, row_number, record)
+
+    # --- command inbox (Google Tasks) ---
+    def command_list_id(self) -> str:
+        if self._command_list_id is None:
+            self._command_list_id = gtasks.ensure_command_list(
+                self.services.tasks, self.command_tasklist_name
+            )
+        return self._command_list_id
+
+    def pending_commands(self) -> list[dict]:
+        return gtasks.list_pending(self.services.tasks, self.command_list_id())
+
+    def finish_command(self, task: dict, receipt: str) -> None:
+        gtasks.complete_with_receipt(self.services.tasks, self.command_list_id(), task, receipt)

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from app.config import Settings, get_settings
 from app.connectors.notion.client import NotionClient
+from app.connectors.relay import RelayClient
 from app.engines.google_mirror import GoogleMirror
 from app.engines.notion_source import NotionSource
 
@@ -21,6 +22,7 @@ class Runtime:
     settings: Settings
     notion: NotionSource
     google: GoogleMirror
+    relay: RelayClient
 
 
 def build_runtime(settings: Settings | None = None) -> Runtime:
@@ -33,8 +35,9 @@ def build_runtime(settings: Settings | None = None) -> Runtime:
         services,
         root_folder_id=settings.google_drive_mirror_folder_id,
         index_sheet_id=settings.google_index_sheet_id,
+        command_tasklist_name=settings.command_tasklist_name,
     )
-    return Runtime(settings, NotionSource(client, settings), google)
+    return Runtime(settings, NotionSource(client, settings), google, RelayClient(settings))
 
 
 def get_runtime() -> Runtime:
