@@ -188,5 +188,11 @@ class GoogleMirror:
     def pending_commands(self) -> list[dict]:
         return gtasks.list_pending(self.services.tasks, self.command_list_id())
 
+    def create_command(self, title: str, notes: str) -> dict:
+        return gtasks.create_task(self.services.tasks, self.command_list_id(), title, notes)
+
+    def list_commands(self) -> list[dict]:
+        return gtasks.list_all(self.services.tasks, self.command_list_id())
+
     def finish_command(self, task: dict, receipt: str) -> None:
         gtasks.complete_with_receipt(self.services.tasks, self.command_list_id(), task, receipt)

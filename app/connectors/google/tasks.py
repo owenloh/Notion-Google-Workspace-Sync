@@ -9,6 +9,8 @@ tasks even before completion propagates.
 
 from __future__ import annotations
 
+from app.connectors.google._retry import execute as _exec
+
 RECEIPT_OK = "✓"
 RECEIPT_ERR = "✗"
 _RECEIPT_MARKERS = (RECEIPT_OK, RECEIPT_ERR)
@@ -16,20 +18,35 @@ _RECEIPT_MARKERS = (RECEIPT_OK, RECEIPT_ERR)
 
 def ensure_command_list(tasks, name: str) -> str:
     """Find-or-create the command tasklist; return its id."""
-    resp = tasks.tasklists().list(maxResults=100).execute()
+    resp = _exec(tasks.tasklists().list(maxResults=100))
     for tl in resp.get("items", []):
         if tl.get("title") == name:
             return tl["id"]
-    created = tasks.tasklists().insert(body={"title": name}).execute()
+    created = _exec(tasks.tasklists().insert(body={"title": name}))
     return created["id"]
+
+
+def create_task(tasks, tasklist_id: str, title: str, notes: str) -> dict:
+    """Insert a task into the list (used to test the command inbox path)."""
+    return _exec(tasks.tasks().insert(tasklist=tasklist_id, body={"title": title, "notes": notes}))
+
+
+def list_all(tasks, tasklist_id: str) -> list[dict]:
+    """Return all tasks incl. completed/hidden (for inspecting receipts)."""
+    resp = _exec(
+        tasks.tasks().list(
+            tasklist=tasklist_id, showCompleted=True, showHidden=True, maxResults=100
+        )
+    )
+    return resp.get("items", [])
 
 
 def list_pending(tasks, tasklist_id: str) -> list[dict]:
     """Return tasks that are not completed and not already receipted."""
-    resp = (
-        tasks.tasks()
-        .list(tasklist=tasklist_id, showCompleted=False, showHidden=False, maxResults=100)
-        .execute()
+    resp = _exec(
+        tasks.tasks().list(
+            tasklist=tasklist_id, showCompleted=False, showHidden=False, maxResults=100
+        )
     )
     out = []
     for task in resp.get("items", []):
@@ -49,7 +66,7 @@ def complete_with_receipt(tasks, tasklist_id: str, task: dict, receipt: str) -> 
         "status": "completed",
         "notes": f"{receipt}\n---\n{original}".strip(),
     }
-    tasks.tasks().patch(tasklist=tasklist_id, task=task["id"], body=body).execute()
+    _exec(tasks.tasks().patch(tasklist=tasklist_id, task=task["id"], body=body))
 
 
 def command_text(task: dict) -> str:
