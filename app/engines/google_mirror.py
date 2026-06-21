@@ -9,11 +9,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from googleapiclient.errors import HttpError
+
 from app.connectors.google import docs as gdocs
 from app.connectors.google import drive as gdrive
 from app.connectors.google import sheets as gsheets
 from app.connectors.google import tasks as gtasks
 from app.connectors.google.auth import GoogleServices
+from app.logging import get_logger
+
+log = get_logger(__name__)
 
 
 class GoogleMirror:
@@ -29,6 +34,56 @@ class GoogleMirror:
         self.index_sheet_id = index_sheet_id
         self.command_tasklist_name = command_tasklist_name
         self._command_list_id: str | None = None
+
+    # --- self-healing root folder + index sheet ---
+    def _is_live(self, file_id: str) -> bool:
+        """True if the id exists and isn't trashed."""
+        if not file_id:
+            return False
+        try:
+            meta = self.services.drive.files().get(
+                fileId=file_id, fields="id,trashed", supportsAllDrives=True
+            ).execute()
+            return not meta.get("trashed", False)
+        except HttpError:
+            return False
+
+    def ensure_root(self) -> str:
+        """Return a live mirror root folder id, recreating it if missing/trashed.
+
+        If the configured ``GOOGLE_DRIVE_MIRROR_FOLDER_ID`` was deleted, fall back
+        to find-or-create "Notion Mirror" at My Drive root (idempotent by name).
+        """
+        if self._is_live(self.root_folder_id):
+            return self.root_folder_id
+        new_id = gdrive.ensure_folder(self.services.drive, "Notion Mirror", "root")
+        if new_id != self.root_folder_id:
+            log.warning(
+                "mirror folder %s missing/trashed; using 'Notion Mirror' folder %s "
+                "(update GOOGLE_DRIVE_MIRROR_FOLDER_ID to persist)",
+                self.root_folder_id, new_id,
+            )
+            self.root_folder_id = new_id
+        return new_id
+
+    def ensure_index_sheet(self) -> str:
+        """Return a live index-sheet id, recreating it under the root if needed."""
+        if self._is_live(self.index_sheet_id):
+            return self.index_sheet_id
+        root = self.ensure_root()
+        existing = gdrive.find_child(self.services.drive, root, "_Notion Index", gdrive.SHEET_MIME)
+        new_id = existing or self.services.drive.files().create(
+            body={"name": "_Notion Index", "mimeType": gdrive.SHEET_MIME, "parents": [root]},
+            fields="id",
+        ).execute()["id"]
+        if new_id != self.index_sheet_id:
+            log.warning(
+                "index sheet %s missing/trashed; using %s "
+                "(update GOOGLE_INDEX_SHEET_ID to persist)",
+                self.index_sheet_id, new_id,
+            )
+            self.index_sheet_id = new_id
+        return new_id
 
     # --- folders / docs ---
     def ensure_folder(self, name: str, parent_id: str) -> str:
@@ -49,7 +104,7 @@ class GoogleMirror:
 
     def drive_tree(self, folder_id: str | None = None, depth: int = 0, max_depth: int = 6) -> dict:
         """Walk the mirror folder into a nested {name,type,id,children} tree (diagnostic)."""
-        folder_id = folder_id or self.root_folder_id
+        folder_id = folder_id or self.ensure_root()
         node: dict[str, Any] = {"id": folder_id, "type": "folder", "children": []}
         if depth >= max_depth:
             return node
@@ -77,7 +132,9 @@ class GoogleMirror:
 
     # --- index sheet ---
     def ensure_index_structure(self) -> None:
-        gsheets.ensure_structure(self.services.sheets, self.index_sheet_id)
+        self.ensure_root()  # heal the root first (sheet is created under it)
+        sheet_id = self.ensure_index_sheet()
+        gsheets.ensure_structure(self.services.sheets, sheet_id)
 
     def read_tab(self, tab: str) -> list[dict[str, Any]]:
         return gsheets.read_records(self.services.sheets, self.index_sheet_id, tab)
