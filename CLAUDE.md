@@ -57,9 +57,18 @@ Do not reintroduce Google→Notion content sync. That was removed on purpose.
     `insert_content` appends a note. **Never `replace_content`** — body-clobber
     footgun (API guards it with `allow_deleting_content`; the relay additionally
     blocks it unless `force:true`). The relay guard reads the `command` field.
-  - Property encoding: dates → `"date:<Prop>:start"` (+ `:end`, `:is_datetime`);
-    checkbox → `"__YES__"`/`"__NO__"`; relation (e.g. `Project`) → array of page ids;
-    a prop literally named `id`/`url` → prefix `userDefined:`.
+  - Property encoding (**write-tested 2026-06-21**, one labeled test Action): dates →
+    `"date:<Prop>:start"` (+ `:end`, `:is_datetime`); checkbox → `"__YES__"`/`"__NO__"`;
+    relation (e.g. `Project`) → **array of page ids** (confirmed on write + read-back);
+    select (e.g. `Action Status`) → plain string; a prop literally named `id`/`url` →
+    prefix `userDefined:`.
+  - **`create-pages` parent ids are the DATABASE ids, NOT the `collection://` data-source
+    ids in "My Notion structure" below.** The `54816fca/f0ea8841/1d3eb1dd` ids do not
+    resolve in this API (it maps everything through the classic `databases/{id}` path).
+    Use: Areas `collection://dfa76d06-073b-4493-9f96-319a9f088a5e`, Projects
+    `collection://b9c0cd8c-fa6c-46d1-95ed-87d7ef97d971`, Actions
+    `collection://2ebc58c5-8617-4748-8021-fcc2a37d3a97`. (These are the ids the relay/
+    `_Commands` Doc use; our own read mirror still crawls by the data-source ids below.)
 - Authoritative write format lives in `skill/notion-master` (now returns JSON; the
   relay extracts its `instructions` markdown). The service fetches it +
   `notion-references-tray` at sync time to populate the `_Commands` Doc.
@@ -100,7 +109,7 @@ Command format (one JSON request in a task's **notes**; see the generated
 
 ```json
 { "path": "/api/notion/create-pages",
-  "body": { "parent": {"data_source_id": "collection://1d3eb1dd-2803-4692-a4d5-6ca9709ae570"},
+  "body": { "parent": {"data_source_id": "collection://2ebc58c5-8617-4748-8021-fcc2a37d3a97"},
             "pages": [ { "properties": { "Name": "Email Bob", "Action Status": "Next",
                                          "date:Due:start": "2026-06-25",
                                          "Project": ["<project page id>"] } } ] } }
@@ -155,15 +164,19 @@ tests/                pytest; in-memory fakes (FakeGoogleMirror/FakeNotionSource
   `_Dashboard`/`_Commands` Docs + Saved Info; synchronous `POST /command`; webhook
   demoted to optional. **69 tests pass, ruff clean.**
 - ✅ Validated against the live Alistair API (2026-06-21): fetched `/api/manifest`,
-  `skill/notion-master`, `skill/notion-references-tray`, `/openapi.json`, and probed
-  reads. Confirmed the `create-pages`/`update-page` body shapes (see "The external
-  …API" above), property encoding, status enums, and that **`archived` is not
-  accepted** (no archive/delete). Tightened the `_Commands` Doc examples + made the
-  relay extract skill `instructions` (skill endpoint now returns JSON). The relay
-  stays **schema-agnostic** (forwards the command; fetches skills at runtime). The
-  one item not write-tested (would create an un-deletable page): the exact relation
-  value encoding on **write** — read-back uses an array of page ids, so the Doc
-  documents `["<id>"]`; confirm with one labeled test write at first live use.
+  `skill/notion-master`, `skill/notion-references-tray`, `/openapi.json`, probed reads,
+  and ran **one authorized labeled test write** (`create-pages`). Confirmed the body
+  shapes (see "The external …API" above), property encoding, status enums, and that
+  **`archived` is not accepted** (no archive/delete). Write-tested: relation = array of
+  page ids, `date:Due:start`, select-as-string all round-trip. Found + fixed two real
+  bugs: (1) the `create-pages` parent needs the **database id** (e.g. Actions
+  `2ebc58c5-…`), not the `collection://1d3eb1dd-…` data-source id we had documented —
+  the latter 404s; (2) `_extract_affected_id` didn't handle the live `{"created":[…]}`
+  response, so re-reflect silently fell back to a poll. Also: relay now extracts skill
+  `instructions` (skill endpoint returns JSON) and falls back to the request `page_id`
+  for `update-page` re-reflect. Relay stays **schema-agnostic** (forwards the command;
+  fetches skills at runtime). NOTE: a labeled test Action `3866f0cc-dd76-81ec-…` was
+  created and must be deleted by hand (no delete endpoint).
 - 🔜 Deploy on Railway; run `scripts/bootstrap.py auth/init/mirror`; paste
   `docs/SAVED_INFO.md` into Gemini Saved info.
 - 🧹 Optional cleanup: delete dead `notion/write.py`, `notion_source` write methods,
