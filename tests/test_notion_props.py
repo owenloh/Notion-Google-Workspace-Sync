@@ -34,10 +34,19 @@ def test_extract_title_and_properties():
 
 
 def test_page_to_item_classifies_kind():
+    # Legacy data-source id in parent still classifies (back-compat).
     item = page_to_item(_action_page())
     assert item.kind == "action"
     assert item.title == "Email Bob"
     assert item.last_edited_by == "user-1"
+
+
+def test_page_to_item_classifies_by_database_id():
+    # A row's parent may report the DATABASE id (e.g. on re-reflect/child crawl);
+    # classification must still resolve the kind.
+    page = _action_page()
+    page["parent"] = {"type": "database_id", "database_id": "2ebc58c5861747488021fcc2a37d3a97"}
+    assert page_to_item(page).kind == "action"
 
 
 def test_build_properties_shapes_payload():

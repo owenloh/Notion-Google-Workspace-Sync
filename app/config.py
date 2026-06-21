@@ -14,19 +14,33 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # The three core databases plus the two loose-page parents. Used as the default
 # crawl roots when ``NOTION_ROOT_IDS`` is not set. Kept here (not in .env) so the
 # known structure is version-controlled and discoverable.
+#
+# IMPORTANT: the classic Notion REST endpoint we query (`databases/{id}/query`,
+# API version 2022-06-28) addresses each spine database by its **database id**.
+# The newer multi-source "data source" / collection ids (54816fca / f0ea8841 /
+# 1d3eb1dd) return 404 on that endpoint, so the roots MUST be the database ids.
 DEFAULT_NOTION_ROOTS: tuple[str, ...] = (
-    "54816fca-6f6c-4588-8c1a-1cdfcc6c9092",  # Areas of Focus (data source)
-    "f0ea8841-ca74-47b7-a28a-0b367bca8c41",  # Projects (data source)
-    "1d3eb1dd-2803-4692-a4d5-6ca9709ae570",  # Actions (data source)
+    "dfa76d06-073b-4493-9f96-319a9f088a5e",  # Areas of Focus (database)
+    "b9c0cd8c-fa6c-46d1-95ed-87d7ef97d971",  # Projects (database)
+    "2ebc58c5-8617-4748-8021-fcc2a37d3a97",  # Actions (database)
     "34f6f0cc-dd76-801d-b0ec-de6c10685d10",  # Mission Control (page → Briefing)
     "1fa6f0cc-dd76-809e-8bcb-e5db5ae28237",  # Library (page → References tray)
 )
 
-# Notion data-source ids for the relational spine, so engines can classify a
-# page by which database it belongs to.
+# Database ids for the relational spine, so engines can classify a page by which
+# database it belongs to and query its rows.
 AREAS_DS_ID = DEFAULT_NOTION_ROOTS[0]
 PROJECTS_DS_ID = DEFAULT_NOTION_ROOTS[1]
 ACTIONS_DS_ID = DEFAULT_NOTION_ROOTS[2]
+
+# Legacy data-source / collection ids for the same three databases. A page's
+# ``parent`` may report either the database id or the data-source id depending on
+# the API version, so classification (kind_for_parent) accepts both.
+LEGACY_SPINE_DS_IDS: dict[str, str] = {
+    "54816fca-6f6c-4588-8c1a-1cdfcc6c9092": "area",
+    "f0ea8841-ca74-47b7-a28a-0b367bca8c41": "project",
+    "1d3eb1dd-2803-4692-a4d5-6ca9709ae570": "action",
+}
 
 
 class Settings(BaseSettings):

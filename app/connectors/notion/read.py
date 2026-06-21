@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.config import ACTIONS_DS_ID, AREAS_DS_ID, PROJECTS_DS_ID
+from app.config import ACTIONS_DS_ID, AREAS_DS_ID, LEGACY_SPINE_DS_IDS, PROJECTS_DS_ID
 from app.connectors.notion.client import NotionClient
 from app.core.markdown import notion_blocks_to_markdown
 
@@ -82,10 +82,13 @@ def _norm_id(notion_id: str | None) -> str:
 
 
 # Keyed by dash-stripped id so lookups are robust to formatting differences.
+# Includes both the database ids (what we query) and the legacy data-source ids,
+# since a page's parent may report either depending on the API version.
 _DS_KIND = {
     _norm_id(AREAS_DS_ID): "area",
     _norm_id(PROJECTS_DS_ID): "project",
     _norm_id(ACTIONS_DS_ID): "action",
+    **{_norm_id(ds): kind for ds, kind in LEGACY_SPINE_DS_IDS.items()},
 }
 
 
