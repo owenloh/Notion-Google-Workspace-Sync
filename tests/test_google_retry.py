@@ -38,6 +38,27 @@ def test_raises_on_non_retryable(monkeypatch):
     assert req.calls == 1
 
 
+class _SSLReq:
+    """Fake request that raises a transport error N times then succeeds."""
+
+    def __init__(self, fails):
+        self.fails = fails
+        self.calls = 0
+
+    def execute(self):
+        self.calls += 1
+        if self.calls <= self.fails:
+            raise OSError("[SSL] record layer failure")
+        return "ok"
+
+
+def test_retries_on_transport_error(monkeypatch):
+    monkeypatch.setattr(_retry.time, "sleep", lambda *_: None)
+    req = _SSLReq(fails=2)
+    assert _retry.execute(req) == "ok"
+    assert req.calls == 3
+
+
 def test_gives_up_after_attempts(monkeypatch):
     monkeypatch.setattr(_retry.time, "sleep", lambda *_: None)
     req = _Req([503, 503, 503])
