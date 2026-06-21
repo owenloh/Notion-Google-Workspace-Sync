@@ -57,8 +57,24 @@ class Settings(BaseSettings):
     full_sync_seconds: int = 1800
     inflight_ttl_seconds: int = 300
     tombstone_grace_seconds: int = 86400
-    # Shared secret required to trigger POST /admin/full-sync on demand.
+    # Cadence for the command inbox poll (Google Tasks has no push).
+    command_poll_seconds: int = 30
+    # Shared secret required to trigger POST /admin/full-sync and POST /command.
     admin_api_key: str = ""
+    # The Notion webhook is optional; the two poll layers + per-command re-reflect
+    # are the required path.
+    enable_notion_webhook: bool = False
+
+    # --- Relay to the existing Alistair Skills API (the write path) ---
+    relay_api_base_url: str = ""
+    relay_api_key: str = ""  # sent as X-API-Key
+    # Comma-separated allowlist of API paths the relay may call. Anything else is
+    # rejected, so a command task can never reach github/push-file or deletes.
+    relay_allowed_paths: str = (
+        "/api/notion/create-pages,/api/notion/update-page,/api/notion/create-comment"
+    )
+    # Google Tasks list that serves as the command inbox.
+    command_tasklist_name: str = "Notion Commands"
 
     notion_api_base: str = "https://api.notion.com/v1"
     notion_version: str = "2022-06-28"
@@ -68,6 +84,10 @@ class Settings(BaseSettings):
         if self.notion_root_ids.strip():
             return [r.strip() for r in self.notion_root_ids.split(",") if r.strip()]
         return list(DEFAULT_NOTION_ROOTS)
+
+    @property
+    def allowed_relay_paths(self) -> list[str]:
+        return [p.strip() for p in self.relay_allowed_paths.split(",") if p.strip()]
 
 
 @lru_cache
