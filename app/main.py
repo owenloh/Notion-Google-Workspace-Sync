@@ -7,6 +7,8 @@ a health check and a manual full-sync trigger.
 from __future__ import annotations
 
 import hmac
+import threading
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -17,6 +19,38 @@ from app.ledger.db import init_engine
 from app.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
+
+# Background full-sync state. A full reconcile of a real workspace can exceed
+# Railway's ~5-min HTTP proxy timeout, so /admin/full-sync runs it in a thread
+# (same pattern the scheduler uses) and /admin/sync-status reports progress.
+_sync_state: dict = {
+    "running": False, "started_at": None, "finished_at": None,
+    "counts": None, "error": None,
+}
+
+
+def _run_full_reconcile() -> None:
+    from app.scheduler.jobs import full_reconcile
+
+    _sync_state.update(
+        running=True, started_at=time.time(), finished_at=None, counts=None, error=None
+    )
+    try:
+        _sync_state["counts"] = full_reconcile()
+    except Exception as exc:  # noqa: BLE001 — record cause for /admin/sync-status
+        log.exception("background full-sync failed")
+        _sync_state["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        _sync_state["running"] = False
+        _sync_state["finished_at"] = time.time()
+
+
+def _sync_state_view() -> dict:
+    view = dict(_sync_state)
+    if view["started_at"]:
+        end = view["finished_at"] or time.time()
+        view["elapsed_seconds"] = round(end - view["started_at"], 1)
+    return view
 
 
 @asynccontextmanager
@@ -64,22 +98,41 @@ def _check_admin_key(provided: str | None) -> None:
 async def full_sync(
     x_admin_key: str | None = Header(default=None),
     key: str | None = Query(default=None),
+    wait: bool = Query(default=False),
 ) -> dict[str, object]:
-    """Trigger a full Notion → Google reconcile on demand (key required).
+    """Trigger a full Notion → Google reconcile (key required).
 
-    Pass the key either as the ``X-Admin-Key`` header or a ``?key=`` query param:
+    Runs in the background by default and returns immediately (a full reconcile
+    can exceed Railway's HTTP timeout); poll ``GET /admin/sync-status``. Pass
+    ``?wait=true`` to run synchronously and get the counts in the response.
 
         curl -X POST "https://<host>/admin/full-sync?key=$ADMIN_API_KEY"
     """
     _check_admin_key(x_admin_key or key)
     from app.scheduler.jobs import full_reconcile
 
-    try:
-        counts = full_reconcile()
-    except Exception as exc:  # noqa: BLE001 — surface the cause to the caller + logs
-        log.exception("full-sync failed")
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
-    return {"status": "ok", "counts": counts}
+    if wait:
+        try:
+            counts = full_reconcile()
+        except Exception as exc:  # noqa: BLE001 — surface the cause to the caller
+            log.exception("full-sync failed")
+            raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+        return {"status": "ok", "counts": counts}
+
+    if _sync_state["running"]:
+        return {"status": "already_running", **_sync_state_view()}
+    threading.Thread(target=_run_full_reconcile, daemon=True).start()
+    return {"status": "started", "poll": "/admin/sync-status"}
+
+
+@app.get("/admin/sync-status")
+async def sync_status(
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Report the most recent background full-sync's progress/result (key required)."""
+    _check_admin_key(x_admin_key or key)
+    return _sync_state_view()
 
 
 @app.get("/admin/drive-tree")
