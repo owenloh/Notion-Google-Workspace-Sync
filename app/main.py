@@ -74,7 +74,11 @@ async def full_sync(
     _check_admin_key(x_admin_key or key)
     from app.scheduler.jobs import full_reconcile
 
-    counts = full_reconcile()
+    try:
+        counts = full_reconcile()
+    except Exception as exc:  # noqa: BLE001 — surface the cause to the caller + logs
+        log.exception("full-sync failed")
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
     return {"status": "ok", "counts": counts}
 
 
