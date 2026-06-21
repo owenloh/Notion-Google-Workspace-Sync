@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from app.ledger.models import Conflict, InflightMarker, SyncPair, SyncState
 
@@ -177,6 +177,20 @@ def purge_expired_inflight(session: Session) -> int:
 
 
 # --- Sync state (watermarks / tokens) --------------------------------------
+
+def reset_all(session: Session) -> dict[str, int]:
+    """Clear every ledger table, forcing a clean full rebuild of the mirror.
+
+    After this the next full-sync re-creates all folders/Docs/rows and rewrites
+    content (the hash gate has nothing to compare against, so nothing is skipped).
+    """
+    counts: dict[str, int] = {}
+    for model in (SyncPair, InflightMarker, SyncState, Conflict):
+        result = session.exec(delete(model))
+        counts[model.__tablename__] = result.rowcount or 0
+    session.commit()
+    return counts
+
 
 def get_state(session: Session, key: str, default: str = "") -> str:
     row = session.get(SyncState, key)
