@@ -45,7 +45,7 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
     notion, google = world
     counts = MirrorOut(session, notion, google, settings).sync_all()
 
-    assert counts == {"area": 1, "project": 1, "action": 1, "page": 1}
+    assert counts == {"area": 1, "project": 1, "action": 1, "page": 1, "failed": 0}
     assert google.structure_ready
 
     # Folder tree: Areas/Career/PourDynamics engine/Spec nesting.

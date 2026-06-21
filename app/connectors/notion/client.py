@@ -35,10 +35,20 @@ class NotionClient:
         self._client.close()
 
     def request(self, method: str, path: str, *, json: dict | None = None) -> dict[str, Any]:
-        """Issue a request with retry on 429 / 5xx (exponential backoff)."""
+        """Issue a request with retry on 429 / 5xx and transient transport/SSL errors."""
         delay = 1.0
+        last_exc: httpx.TransportError | None = None
         for _attempt in range(5):
-            resp = self._client.request(method, path, json=json)
+            try:
+                resp = self._client.request(method, path, json=json)
+            except httpx.TransportError as exc:  # connect/read/SSL blips
+                last_exc = exc
+                log.warning(
+                    "Notion %s %s transport error: %s; retry in %.1fs", method, path, exc, delay
+                )
+                time.sleep(delay)
+                delay *= 2
+                continue
             if resp.status_code == 429 or resp.status_code >= 500:
                 retry_after = float(resp.headers.get("Retry-After", delay))
                 log.warning(
@@ -50,6 +60,8 @@ class NotionClient:
                 continue
             resp.raise_for_status()
             return resp.json() if resp.content else {}
+        if last_exc is not None:
+            raise last_exc
         resp.raise_for_status()
         return {}
 
