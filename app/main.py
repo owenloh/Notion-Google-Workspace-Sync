@@ -11,7 +11,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import Body, FastAPI, Header, HTTPException, Query
 
 from app.api.webhooks import notion as notion_webhook
 from app.config import get_settings
@@ -170,6 +170,73 @@ async def drive_tree(
         log.exception("drive-tree failed")
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
     return {"status": "ok", "root_folder_id": rt.google.root_folder_id, "tree": tree}
+
+
+@app.post("/admin/test-command")
+async def test_command(
+    payload: dict | None = Body(default=None),
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Insert a command task into the Notion Commands list (tests the inbox path).
+
+    The JSON body is written into the task's notes exactly as Gemini would; the
+    next ``poll_commands`` cycle (~30s) picks it up, relays it, and writes a
+    receipt. Defaults to creating a labeled test Action if no body is given.
+    """
+    _check_admin_key(x_admin_key or key)
+    import json as _json
+
+    from app.runtime import get_runtime
+
+    cmd = payload or {
+        "path": "/api/notion/create-pages",
+        "body": {
+            "parent": {"data_source_id": "collection://2ebc58c5-8617-4748-8021-fcc2a37d3a97"},
+            "pages": [{"properties": {
+                "Name": "TEST inbox command — delete me", "Action Status": "Next",
+            }}],
+        },
+    }
+    rt = get_runtime()
+    task = rt.google.create_command("TEST command (delete me)", _json.dumps(cmd))
+    return {"status": "ok", "task_id": task.get("id"), "notes": task.get("notes")}
+
+
+@app.get("/admin/list-commands")
+async def list_commands(
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """List all tasks in the command inbox with their status + receipt notes."""
+    _check_admin_key(x_admin_key or key)
+    from app.runtime import get_runtime
+
+    rt = get_runtime()
+    items = rt.google.list_commands()
+    return {"status": "ok", "tasks": [
+        {"id": t.get("id"), "title": t.get("title"),
+         "status": t.get("status"), "notes": t.get("notes")}
+        for t in items
+    ]}
+
+
+@app.get("/admin/read-tab")
+async def read_tab(
+    tab: str = Query(...),
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Read rows of an index-sheet tab (Areas/Projects/Actions) to verify writes."""
+    _check_admin_key(x_admin_key or key)
+    from app.runtime import get_runtime
+
+    rt = get_runtime()
+    try:
+        rows = rt.google.read_tab(tab)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+    return {"status": "ok", "tab": tab, "count": len(rows), "rows": rows}
 
 
 @app.post("/command")
