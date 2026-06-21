@@ -63,33 +63,55 @@ class MirrorOut:
         refs_root = self.google.ensure_folder("References", self.google.root_folder_id)
         brief_root = self.google.ensure_folder("Briefing", self.google.root_folder_id)
 
-        counts = {"area": 0, "project": 0, "action": 0, "page": 0}
+        counts = {"area": 0, "project": 0, "action": 0, "page": 0, "failed": 0}
 
         by_kind = {"area": [], "project": [], "action": []}
         for it in spine:
             by_kind.setdefault(it.kind, []).append(it)
 
+        # Each item is isolated: a transient error (SSL/network) or a single bad
+        # page must not abort the whole reconcile. Skipped items are counted and
+        # healed by the next poll/reconcile.
         for area in by_kind["area"]:
-            self._mirror_body_item(area, areas_root, id_to_title)
-            counts["area"] += 1
+            try:
+                self._mirror_body_item(area, areas_root, id_to_title)
+                counts["area"] += 1
+            except Exception:  # noqa: BLE001
+                log.exception("mirror failed for area %s; skipping", area.title)
+                counts["failed"] += 1
         for project in by_kind["project"]:
-            parent = self._area_folder_for(project, areas_root, id_to_title)
-            self._mirror_body_item(project, parent, id_to_title)
-            counts["project"] += 1
+            try:
+                parent = self._area_folder_for(project, areas_root, id_to_title)
+                self._mirror_body_item(project, parent, id_to_title)
+                counts["project"] += 1
+            except Exception:  # noqa: BLE001
+                log.exception("mirror failed for project %s; skipping", project.title)
+                counts["failed"] += 1
         for action in by_kind["action"]:
-            self._mirror_action(action, id_to_title)
-            counts["action"] += 1
+            try:
+                self._mirror_action(action, id_to_title)
+                counts["action"] += 1
+            except Exception:  # noqa: BLE001
+                log.exception("mirror failed for action %s; skipping", action.title)
+                counts["failed"] += 1
 
         for page in loose:
             root = brief_root if page.kind == "briefing" else refs_root
-            self._mirror_body_item(page, root, id_to_title)
+            try:
+                self._mirror_body_item(page, root, id_to_title)
+            except Exception:  # noqa: BLE001
+                log.exception("mirror failed for loose page %s; skipping", page.title)
+                counts["failed"] += 1
 
         counts["page"] = self._recurse_all_children(
             [it.notion_id for it in spine if it.kind in {"area", "project"}]
             + [it.notion_id for it in loose],
             id_to_title,
         )
-        self._write_reference_docs(spine)
+        try:
+            self._write_reference_docs(spine)
+        except Exception:  # noqa: BLE001
+            log.exception("writing _Dashboard/_Commands docs failed; continuing")
         return counts
 
     def _write_reference_docs(self, spine: list[NotionItem]) -> None:
@@ -241,7 +263,7 @@ class MirrorOut:
                 continue
             try:
                 child_ids = self.notion.child_page_ids(pid)
-            except httpx.HTTPError as exc:
+            except Exception as exc:  # noqa: BLE001 — transient/SSL or bad page
                 log.warning("could not list child pages of %s; skipping subtree: %s", pid, exc)
                 continue
             for child_id in child_ids:
@@ -249,7 +271,7 @@ class MirrorOut:
                     child = self.notion.get_item(child_id)
                     child.kind = "page"
                     self._mirror_body_item(child, parent_folder, id_to_title)
-                except httpx.HTTPError as exc:
+                except Exception as exc:  # noqa: BLE001 — transient/SSL or bad page
                     log.warning("could not mirror child page %s; skipping: %s", child_id, exc)
                     continue
                 count += 1
