@@ -75,6 +75,11 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
     assert any("focus here" in v for v in google.docs.values())
     assert any("step one" in v for v in google.docs.values())
 
+    # Reference docs generated at the root with the live catalog.
+    assert ("_Dashboard", "ROOT") in {(n, p) for n, p in google.doc_meta.values()}
+    assert ("_Commands", "ROOT") in {(n, p) for n, p in google.doc_meta.values()}
+    assert any("PourDynamics engine" in v and "`p1`" in v for v in google.docs.values())
+
 
 def test_mirror_is_idempotent(session, settings, world):
     notion, google = world

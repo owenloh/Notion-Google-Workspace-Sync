@@ -50,6 +50,31 @@ def _extract_affected_id(data: object) -> str | None:
     return None
 
 
+def fetch_skill_docs(settings: Settings | None = None, slugs: tuple[str, ...] = ()) -> dict[str, str]:
+    """Best-effort GET of `/api/skill/{slug}` docs (for the `_Commands` Doc).
+
+    Returns ``{slug: text}``; on any failure the slug is simply omitted, so doc
+    generation never breaks if the API is unreachable.
+    """
+    settings = settings or get_settings()
+    if not settings.relay_api_base_url or not settings.relay_api_key:
+        return {}
+    slugs = slugs or ("notion-master", "notion-references-tray")
+    out: dict[str, str] = {}
+    headers = {"X-API-Key": settings.relay_api_key}
+    for slug in slugs:
+        try:
+            resp = httpx.get(
+                f"{settings.relay_api_base_url.rstrip('/')}/api/skill/{slug}",
+                headers=headers, timeout=20.0,
+            )
+            if resp.is_success:
+                out[slug] = resp.text
+        except httpx.HTTPError:
+            log.warning("could not fetch skill doc %s", slug)
+    return out
+
+
 class RelayClient:
     def __init__(self, settings: Settings | None = None, client: httpx.Client | None = None):
         self.settings = settings or get_settings()

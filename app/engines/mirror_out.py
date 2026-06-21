@@ -88,7 +88,42 @@ class MirrorOut:
             + [it.notion_id for it in loose],
             id_to_title,
         )
+        self._write_reference_docs(spine)
         return counts
+
+    def _write_reference_docs(self, spine: list[NotionItem]) -> None:
+        """(Re)generate the read-only `_Dashboard` and `_Commands` Docs.
+
+        Change-gated by content hash so an unchanged catalog isn't rewritten.
+        """
+        from app.connectors.relay import fetch_skill_docs
+        from app.engines.docs_gen import (
+            CatalogEntry,
+            build_commands_md,
+            build_dashboard_md,
+        )
+
+        entries = [
+            CatalogEntry(kind=it.kind, name=it.title, notion_id=it.notion_id)
+            for it in spine
+            if it.kind in {"area", "project", "action"}
+        ]
+        root = self.google.root_folder_id
+        skills = fetch_skill_docs(self.settings)
+        self._write_doc_if_changed("_Dashboard", root, build_dashboard_md(entries))
+        self._write_doc_if_changed(
+            "_Commands", root,
+            build_commands_md(entries, self.settings.allowed_relay_paths, skills),
+        )
+
+    def _write_doc_if_changed(self, name: str, parent_id: str, markdown: str) -> None:
+        doc_id = self.google.ensure_doc(name, parent_id)
+        key = f"doc_hash:{name}"
+        new_hash = body_hash(markdown)
+        if repo.get_state(self.session, key) == new_hash:
+            return
+        self.google.write_doc(doc_id, markdown)
+        repo.set_state(self.session, key, new_hash)
 
     def mirror_item(self, item: NotionItem) -> SyncPair | None:
         """Mirror a single item (event-driven path)."""
