@@ -13,6 +13,7 @@ user's deployed API. The relay is deliberately **not** a blind proxy:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import httpx
@@ -71,10 +72,28 @@ def fetch_skill_docs(
                 headers=headers, timeout=20.0,
             )
             if resp.is_success:
-                out[slug] = resp.text
+                out[slug] = _skill_text(resp.text)
         except httpx.HTTPError:
             log.warning("could not fetch skill doc %s", slug)
     return out
+
+
+def _skill_text(raw: str) -> str:
+    """Pull the human-readable rules out of a skill response.
+
+    `/api/skill/{slug}` returns JSON (``{skill,name,instructions,sections,...}``);
+    we embed only the ``instructions`` markdown in the `_Commands` Doc rather than
+    the raw JSON blob. Falls back to the raw text if it isn't the expected JSON.
+    """
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return raw
+    if isinstance(data, dict):
+        text = data.get("instructions")
+        if isinstance(text, str) and text.strip():
+            return text
+    return raw
 
 
 class RelayClient:

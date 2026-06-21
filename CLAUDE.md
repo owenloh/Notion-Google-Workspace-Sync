@@ -44,18 +44,30 @@ Do not reintroduce Google→Notion content sync. That was removed on purpose.
 - Base URL `https://web-production-2144c.up.railway.app`; auth header `X-API-Key`.
   Manifest at `/api/manifest`; skill docs at `/api/skill/{slug}`. "Function APIs
   do; skill APIs describe."
-- Write endpoints the relay uses:
-  - `POST /api/notion/create-pages` (add action/project/sub-page)
-  - `POST /api/notion/update-page` with `update_properties` (status/due/fields) or
-    `insert_content` (append a note). **Never `replace_content`** — it's the
-    body-clobber footgun and the relay blocks it unless `force:true`.
-- Authoritative write format lives in `skill/notion-master` (property names, status
-  enums, relation shape). The service fetches it at sync time to populate the
-  `_Commands` Doc.
-- **Known gaps:** no archive/delete endpoint (some ops return 501); confirm whether
-  `update-page` accepts `archived:true` before adding an `archive` command. The API
-  also exposes `github/push-file` + full writes, so the relay **allowlists** paths
-  (never a blind proxy).
+- Write endpoints the relay uses (body shapes **validated 2026-06-21** against the
+  live API via `/openapi.json` + manifest + a read probe):
+  - `POST /api/notion/create-pages` (add action/project/sub-page) —
+    `{"parent": {"data_source_id": "collection://<ds id>"}, "pages": [{"properties":
+    {...}, "content": "<md>"?}]}`. Parent is **top-level** (not per-page), uses
+    `data_source_id` with the `collection://` prefix (**not** `database_id`);
+    `{"page_id": "<id>"}` parent = a non-database sub-page.
+  - `POST /api/notion/update-page` — `{"page_id": "<id>", "command":
+    "update_properties|insert_content|update_content|replace_content", "properties":
+    {...}, "content": "<md>"}`. `update_properties` sets status/due/fields,
+    `insert_content` appends a note. **Never `replace_content`** — body-clobber
+    footgun (API guards it with `allow_deleting_content`; the relay additionally
+    blocks it unless `force:true`). The relay guard reads the `command` field.
+  - Property encoding: dates → `"date:<Prop>:start"` (+ `:end`, `:is_datetime`);
+    checkbox → `"__YES__"`/`"__NO__"`; relation (e.g. `Project`) → array of page ids;
+    a prop literally named `id`/`url` → prefix `userDefined:`.
+- Authoritative write format lives in `skill/notion-master` (now returns JSON; the
+  relay extracts its `instructions` markdown). The service fetches it +
+  `notion-references-tray` at sync time to populate the `_Commands` Doc.
+- **Known gaps (validated):** **no archive/delete** — `update-page` does NOT accept
+  `archived` (no such field in `UpdatePageRequest`), and there is no delete endpoint,
+  so an archive/delete command returns `✗ unsupported`. `get-teams`/`create-view`/
+  `update-view` return 501. The API also exposes `github/push-file` + full writes, so
+  the relay **allowlists** paths (never a blind proxy).
 
 ## My Notion structure (read live via the connector)
 
@@ -88,9 +100,10 @@ Command format (one JSON request in a task's **notes**; see the generated
 
 ```json
 { "path": "/api/notion/create-pages",
-  "body": { "parent": {"database_id": "<Actions db id>"},
-            "properties": { "Name": "Email Bob", "Action Status": "Next",
-                            "Due": "2026-06-25", "Project": ["<project id>"] } } }
+  "body": { "parent": {"data_source_id": "collection://1d3eb1dd-2803-4692-a4d5-6ca9709ae570"},
+            "pages": [ { "properties": { "Name": "Email Bob", "Action Status": "Next",
+                                         "date:Due:start": "2026-06-25",
+                                         "Project": ["<project page id>"] } } ] } }
 ```
 
 ## Sync model (incremental, hash-gated — never a full rewrite)
@@ -141,11 +154,16 @@ tests/                pytest; in-memory fakes (FakeGoogleMirror/FakeNotionSource
   client + tolerant parser; Google Tasks inbox; command executor + `poll_commands`;
   `_Dashboard`/`_Commands` Docs + Saved Info; synchronous `POST /command`; webhook
   demoted to optional. **69 tests pass, ruff clean.**
-- ⚠️ Not yet validated against the live Alistair API: the dev sandbox's network
-  egress blocked the host, so the relay is **schema-agnostic** (forwards whatever
-  the command says; fetches `skill/notion-master` at runtime). Confirm the exact
-  `create-pages`/`update-page` body and the `archived:true` question against the
-  real API, then tighten `_Commands` examples if needed (no code change required).
+- ✅ Validated against the live Alistair API (2026-06-21): fetched `/api/manifest`,
+  `skill/notion-master`, `skill/notion-references-tray`, `/openapi.json`, and probed
+  reads. Confirmed the `create-pages`/`update-page` body shapes (see "The external
+  …API" above), property encoding, status enums, and that **`archived` is not
+  accepted** (no archive/delete). Tightened the `_Commands` Doc examples + made the
+  relay extract skill `instructions` (skill endpoint now returns JSON). The relay
+  stays **schema-agnostic** (forwards the command; fetches skills at runtime). The
+  one item not write-tested (would create an un-deletable page): the exact relation
+  value encoding on **write** — read-back uses an array of page ids, so the Doc
+  documents `["<id>"]`; confirm with one labeled test write at first live use.
 - 🔜 Deploy on Railway; run `scripts/bootstrap.py auth/init/mirror`; paste
   `docs/SAVED_INFO.md` into Gemini Saved info.
 - 🧹 Optional cleanup: delete dead `notion/write.py`, `notion_source` write methods,
