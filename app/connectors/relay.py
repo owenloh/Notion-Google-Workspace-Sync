@@ -13,6 +13,7 @@ user's deployed API. The relay is deliberately **not** a blind proxy:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import httpx
@@ -33,7 +34,18 @@ class RelayResult:
 
 
 def _extract_affected_id(data: object) -> str | None:
-    """Best-effort pull of a Notion page id/url from a response body."""
+    """Best-effort pull of a Notion page id/url from a response body.
+
+    The live API returns ``create-pages`` as ``{"created": [{"id", "url", ...}],
+    "count": N}`` and other shapes nest the page under ``page``/``result``/``data``,
+    so we recurse through both dicts and lists.
+    """
+    if isinstance(data, list):
+        for item in data:
+            found = _extract_affected_id(item)
+            if found:
+                return found
+        return None
     if isinstance(data, dict):
         for key in ("id", "page_id", "notion_id"):
             val = data.get(key)
@@ -41,9 +53,9 @@ def _extract_affected_id(data: object) -> str | None:
                 return val
         for key in ("url", "page_url"):
             val = data.get(key)
-            if isinstance(val, str) and "notion.so" in val:
+            if isinstance(val, str) and "notion." in val:
                 return val.rstrip("/").split("/")[-1].split("-")[-1]
-        for nested in ("page", "result", "data"):
+        for nested in ("created", "pages", "results", "page", "result", "data"):
             found = _extract_affected_id(data.get(nested))
             if found:
                 return found
@@ -71,10 +83,28 @@ def fetch_skill_docs(
                 headers=headers, timeout=20.0,
             )
             if resp.is_success:
-                out[slug] = resp.text
+                out[slug] = _skill_text(resp.text)
         except httpx.HTTPError:
             log.warning("could not fetch skill doc %s", slug)
     return out
+
+
+def _skill_text(raw: str) -> str:
+    """Pull the human-readable rules out of a skill response.
+
+    `/api/skill/{slug}` returns JSON (``{skill,name,instructions,sections,...}``);
+    we embed only the ``instructions`` markdown in the `_Commands` Doc rather than
+    the raw JSON blob. Falls back to the raw text if it isn't the expected JSON.
+    """
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return raw
+    if isinstance(data, dict):
+        text = data.get("instructions")
+        if isinstance(text, str) and text.strip():
+            return text
+    return raw
 
 
 class RelayClient:
@@ -117,7 +147,11 @@ class RelayClient:
                 data = resp.text
 
         if resp.is_success:
-            affected = _extract_affected_id(data)
+            # Prefer an id from the response; for update-page the response may carry
+            # none, so fall back to the page_id the request already targeted.
+            affected = _extract_affected_id(data) or (
+                req.body.get("page_id") if isinstance(req.body.get("page_id"), str) else None
+            )
             return RelayResult(
                 ok=True, status=resp.status_code,
                 summary=f"{req.method} {req.path} → {resp.status_code}",
