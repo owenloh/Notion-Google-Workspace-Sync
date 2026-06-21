@@ -1,0 +1,157 @@
+"""Reading from Notion: data-source queries, page properties, and block bodies.
+
+The property-extraction helpers are pure (they take a Notion API page dict) so
+they can be unit-tested without the network.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from app.config import ACTIONS_DS_ID, AREAS_DS_ID, PROJECTS_DS_ID
+from app.connectors.notion.client import NotionClient
+from app.core.markdown import notion_blocks_to_markdown
+
+
+@dataclass
+class NotionItem:
+    """A page reduced to what the sync needs."""
+
+    notion_id: str
+    kind: str  # 'area' | 'project' | 'action' | 'page' | 'reference' | 'briefing'
+    title: str
+    properties: dict[str, Any]  # scalar/list property values (relations as names TBD)
+    relations: dict[str, list[str]]  # prop name -> related page ids
+    parent_id: str | None
+    parent_type: str | None
+    last_edited_time: str | None
+    last_edited_by: str | None
+    archived: bool = False
+    children: list[NotionItem] = field(default_factory=list)
+
+
+def _rich_text_plain(rt: list[dict]) -> str:
+    return "".join(span.get("plain_text", "") for span in rt or [])
+
+
+def extract_title(props: dict) -> str:
+    for value in props.values():
+        if value.get("type") == "title":
+            return _rich_text_plain(value.get("title", []))
+    return ""
+
+
+def extract_properties(props: dict) -> tuple[dict[str, Any], dict[str, list[str]]]:
+    """Reduce a Notion ``properties`` object to (scalars, relations).
+
+    ``scalars`` maps property name → a plain value (str / list / bool / number /
+    date string). ``relations`` maps property name → list of related page ids,
+    kept separate so the engine can resolve them to names against the ledger.
+    """
+    scalars: dict[str, Any] = {}
+    relations: dict[str, list[str]] = {}
+    for name, value in props.items():
+        t = value.get("type")
+        if t == "title":
+            scalars[name] = _rich_text_plain(value.get("title", []))
+        elif t == "rich_text":
+            scalars[name] = _rich_text_plain(value.get("rich_text", []))
+        elif t in {"select", "status"}:
+            inner = value.get(t)
+            scalars[name] = inner.get("name", "") if inner else ""
+        elif t == "multi_select":
+            scalars[name] = [o.get("name", "") for o in value.get("multi_select", [])]
+        elif t == "date":
+            d = value.get("date")
+            scalars[name] = d.get("start", "") if d else ""
+        elif t == "checkbox":
+            scalars[name] = bool(value.get("checkbox"))
+        elif t == "url":
+            scalars[name] = value.get("url") or ""
+        elif t == "number":
+            scalars[name] = value.get("number")
+        elif t == "relation":
+            relations[name] = [r.get("id") for r in value.get("relation", [])]
+        # created_time / last_edited_time / people / formula are ignored for hashing.
+    return scalars, relations
+
+
+def _norm_id(notion_id: str | None) -> str:
+    return (notion_id or "").replace("-", "")
+
+
+# Keyed by dash-stripped id so lookups are robust to formatting differences.
+_DS_KIND = {
+    _norm_id(AREAS_DS_ID): "area",
+    _norm_id(PROJECTS_DS_ID): "project",
+    _norm_id(ACTIONS_DS_ID): "action",
+}
+
+
+def kind_for_parent(parent: dict) -> str:
+    """Classify a page by its parent data-source/database, else generic page."""
+    if parent.get("type") in {"database_id", "data_source_id"}:
+        ds = parent.get("database_id") or parent.get("data_source_id")
+        return _DS_KIND.get(_norm_id(ds), "page") if ds else "page"
+    return "page"
+
+
+def page_to_item(page: dict, kind: str | None = None) -> NotionItem:
+    parent = page.get("parent", {})
+    scalars, relations = extract_properties(page.get("properties", {}))
+    return NotionItem(
+        notion_id=page["id"],
+        kind=kind or kind_for_parent(parent),
+        title=extract_title(page.get("properties", {})),
+        properties=scalars,
+        relations=relations,
+        parent_id=parent.get("database_id")
+        or parent.get("data_source_id")
+        or parent.get("page_id")
+        or parent.get("block_id"),
+        parent_type=parent.get("type"),
+        last_edited_time=page.get("last_edited_time"),
+        last_edited_by=(page.get("last_edited_by") or {}).get("id"),
+        archived=page.get("archived", False) or page.get("in_trash", False),
+    )
+
+
+# --- API-backed helpers ----------------------------------------------------
+
+def query_data_source(client: NotionClient, data_source_id: str) -> list[NotionItem]:
+    """Return all pages of a database/data source as NotionItems."""
+    kind = _DS_KIND.get(_norm_id(data_source_id), "page")
+    items = []
+    for page in client.paginate("POST", f"/databases/{data_source_id}/query"):
+        items.append(page_to_item(page, kind=kind))
+    return items
+
+
+def get_page(client: NotionClient, page_id: str) -> NotionItem:
+    page = client.request("GET", f"/pages/{page_id}")
+    return page_to_item(page)
+
+
+def get_block_children(client: NotionClient, block_id: str) -> list[dict]:
+    """Return the raw child blocks of a block/page (one level)."""
+    return list(client.paginate("GET", f"/blocks/{block_id}/children"))
+
+
+def get_body_markdown(client: NotionClient, page_id: str) -> str:
+    """Fetch a page's top-level body blocks and render canonical Markdown.
+
+    Child *pages* are excluded here (they are mirrored as their own items);
+    nested block content (e.g. inside toggles) is left to a future pass.
+    """
+    blocks = [b for b in get_block_children(client, page_id) if b.get("type") != "child_page"]
+    return notion_blocks_to_markdown(blocks)
+
+
+def get_child_page_ids(client: NotionClient, page_id: str) -> list[str]:
+    """Return ids of block-level child pages directly under ``page_id``."""
+    return [
+        b["id"]
+        for b in get_block_children(client, page_id)
+        if b.get("type") == "child_page"
+    ]
