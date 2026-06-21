@@ -50,7 +50,9 @@ def _extract_affected_id(data: object) -> str | None:
     return None
 
 
-def fetch_skill_docs(settings: Settings | None = None, slugs: tuple[str, ...] = ()) -> dict[str, str]:
+def fetch_skill_docs(
+    settings: Settings | None = None, slugs: tuple[str, ...] = ()
+) -> dict[str, str]:
     """Best-effort GET of `/api/skill/{slug}` docs (for the `_Commands` Doc).
 
     Returns ``{slug: text}``; on any failure the slug is simply omitted, so doc
