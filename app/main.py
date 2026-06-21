@@ -82,6 +82,24 @@ async def full_sync(
     return {"status": "ok", "counts": counts}
 
 
+@app.get("/admin/drive-tree")
+async def drive_tree(
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Return the live Drive mirror folder structure (diagnostic; key required)."""
+    _check_admin_key(x_admin_key or key)
+    from app.runtime import get_runtime
+
+    rt = get_runtime()
+    try:
+        tree = rt.google.drive_tree()
+    except Exception as exc:  # noqa: BLE001 — surface the cause to the caller + logs
+        log.exception("drive-tree failed")
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+    return {"status": "ok", "root_folder_id": rt.google.root_folder_id, "tree": tree}
+
+
 @app.post("/command")
 async def command(
     payload: dict,
