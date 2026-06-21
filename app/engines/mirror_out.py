@@ -15,6 +15,7 @@ Folder layout produced:
 
 from __future__ import annotations
 
+import httpx
 from sqlmodel import Session
 
 from app.config import Settings, get_settings
@@ -152,7 +153,14 @@ class MirrorOut:
         pair = repo.get_pair_by_notion_id(self.session, item.notion_id)
         record = self._build_record(item, id_to_title, doc_id)
         prop_hash = property_hash(item.kind, record) if item.kind != "page" else None
-        markdown = self.notion.body_markdown(item.notion_id)
+        # Body fetch is best-effort: a page whose body can't be read must not
+        # abort the whole reconcile, so degrade to a placeholder and carry on.
+        try:
+            markdown = self.notion.body_markdown(item.notion_id)
+        except httpx.HTTPError as exc:
+            log.warning("body unavailable for %s (%s); mirroring metadata only: %s",
+                        item.title, item.notion_id, exc)
+            markdown = f"_(body could not be read from Notion: {exc})_"
         b_hash = body_hash(markdown)
 
         pair = repo.upsert_pair(
@@ -229,10 +237,19 @@ class MirrorOut:
             parent_folder = self._folder_of.get(_norm(pid))
             if not parent_folder:
                 continue
-            for child_id in self.notion.child_page_ids(pid):
-                child = self.notion.get_item(child_id)
-                child.kind = "page"
-                self._mirror_body_item(child, parent_folder, id_to_title)
+            try:
+                child_ids = self.notion.child_page_ids(pid)
+            except httpx.HTTPError as exc:
+                log.warning("could not list child pages of %s; skipping subtree: %s", pid, exc)
+                continue
+            for child_id in child_ids:
+                try:
+                    child = self.notion.get_item(child_id)
+                    child.kind = "page"
+                    self._mirror_body_item(child, parent_folder, id_to_title)
+                except httpx.HTTPError as exc:
+                    log.warning("could not mirror child page %s; skipping: %s", child_id, exc)
+                    continue
                 count += 1
                 stack.append(child_id)
         return count
