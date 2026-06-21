@@ -1,48 +1,86 @@
-# Notion ⇄ Google Workspace Sync
+# Notion → Google reflection + command relay
 
-A two-way mirror that keeps an entire Notion workspace in step with Google
-Workspace (a `_Notion Index` Google Sheet + a Drive folder tree of Google Docs),
-so the workspace becomes reachable through Google-native assistants (e.g. Gemini
-Live) while edits made on either side flow back to the other.
+Makes an entire Notion workspace reachable through **Gemini Live voice**, which can
+only read/write Google Workspace. Notion is mirrored **one-way** into Google Drive
+as a rich, read-only set of Docs (fast retrieval), and changes are made through a
+**Google Tasks command inbox** that this service relays to an existing Notion API.
 
-## Why
+## Why one-way + commands
 
-Notion is the source of truth for a PARA + GTD system. Google-native assistants
-can only read and write Google Workspace, not Notion. This service mirrors the
-whole Notion workspace into Google Workspace and keeps both sides synchronized,
-so the assistant always sees current data and anything it creates lands back in
-Notion.
+A Notion page body can't be faithfully represented in a Google Doc (callouts,
+toggles, tables, columns, nested blocks, databases/views have no clean equivalent).
+A two-way *content* mirror would eventually write a lossy Doc back and destroy the
+rich Notion structure. So:
 
-> Scope: **only** the Notion ⇄ Google Workspace sync. Google Calendar and
-> Microsoft To-Do are explicitly out of scope.
+- **Reads:** Notion → Google **Docs** (read-only reflection). Gemini Live reads Docs.
+- **Writes:** Gemini Live writes a **Google Task** (the one surface it can write by
+  voice). This service reads the task, **relays** it as an HTTP call to the existing
+  *Alistair Skills API* (which holds the full Notion write toolset), completes the
+  task with a `✓`/`✗` receipt, and re-reflects the affected page. Google can never
+  silently corrupt Notion.
 
-## What it mirrors
+> Gemini Live can't call custom HTTP APIs / MCP directly (that's Enterprise/CLI
+> only), and **Gems don't work in Live** — only "Saved Info" loosely steers it. The
+> Tasks inbox + receipt is the workable write path; confirmation is a follow-up
+> turn ("did that go through?").
 
-* **Relational spine** (Areas → Projects → Actions) → three tabs of a single
-  Google Sheet (`_Notion Index`). Each row links to its body Google Doc.
-* **Rich bodies + nested sub-pages** → Google Docs in a Drive folder tree that
-  mirrors the relation hierarchy, recursing into block-level child pages.
-* **Loose pages** — the References tray and the Briefing page — as Docs.
+## Google-side layout
 
-## How it works
-
-A single FastAPI service plus an in-process scheduler. A SQLite **ledger** maps
-each Notion page to its Google artifacts and stores per-facet content hashes.
-Every change — whether it arrives via a Notion webhook or a poll of Notion /
-Drive / Sheets — flows through one **echo-suppression pipeline** (canonical hash
-compare + short-lived inflight markers) so a write to one side never bounces back
-as a phantom edit.
-
-See `app/` for the module layout and the approved plan for the full design.
-
-## Development
-
-```bash
-uv venv --python 3.11
-uv pip install -e ".[dev]"
-uv run pytest
+```
+Google Tasks "Notion Commands"   ← Gemini writes one JSON request per task
+Drive: Notion Mirror/            ← read-only reflection
+  _Commands (Doc)                  how to write + allowed paths + name→id catalog
+  _Dashboard (Doc)                 compact Areas/Projects/Actions list with ids
+  Areas/<Area>/<Project>/….gdoc    rich bodies, recursed into nested blocks
+  References/  Briefing/
 ```
 
-Copy `.env.example` to `.env` and fill in the Notion and Google credentials.
-`scripts/bootstrap.py` runs the one-time Google OAuth consent flow, creates the
-`_Notion Index` sheet, and performs the first full mirror.
+## How it stays in sync
+
+| Layer | Cadence | Purpose |
+| --- | --- | --- |
+| `poll_commands` | ~30 s | run pending command tasks (Tasks has no push) |
+| `poll_notion` | ~3 min | mirror spine + loose pages changed by `last_edited_time` |
+| `full_reconcile` | ~30 min | recurse all child pages, heal drift, regenerate Docs |
+| per-command re-reflect | instant | refresh the page a command just changed |
+| Notion webhook | optional | near-instant reflection of hand edits (off by default) |
+
+Propagation is incremental — only content whose hash changed is rewritten.
+
+## Command format
+
+Gemini puts one JSON request in a task's **notes** (see the generated `_Commands`
+Doc for the live schema + ids):
+
+```json
+{ "path": "/api/notion/create-pages",
+  "body": { "parent": {"database_id": "<Actions db id>"},
+            "properties": { "Name": "Email Bob", "Action Status": "Next",
+                            "Due": "2026-06-25", "Project": ["<project id>"] } } }
+```
+
+The relay is **guarded**: only `RELAY_ALLOWED_PATHS` are callable (so a task can't
+reach `github/push-file` or deletes), and `update-page` `replace_content` is blocked
+unless `force:true`.
+
+Non-voice clients can call the synchronous endpoint instead:
+
+```bash
+curl -X POST "https://<host>/command?key=$ADMIN_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"path":"/api/notion/update-page","body":{...}}'
+```
+
+## Setup
+
+```bash
+uv venv --python 3.11 && uv pip install -e ".[dev]"
+uv run pytest
+cp .env.example .env   # fill in Notion (read-only), Google OAuth, relay key, admin key
+python -m scripts.bootstrap auth     # Google consent → refresh token (incl. Tasks)
+python -m scripts.bootstrap init     # create the Drive mirror folder + sheet
+python -m scripts.bootstrap mirror   # first full reflection (+ _Commands/_Dashboard)
+```
+
+Then paste `docs/SAVED_INFO.md` into Gemini → Settings → **Saved info**. Deploy on
+Railway with a `/data` volume (Dockerfile + railway.json provided).

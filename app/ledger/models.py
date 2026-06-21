@@ -75,6 +75,16 @@ class InflightMarker(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class SyncState(SQLModel, table=True):
+    """Small key/value store for sync watermarks and the Drive page token."""
+
+    __tablename__ = "sync_state"
+
+    key: str = Field(primary_key=True)
+    value: str = ""
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class Conflict(SQLModel, table=True):
     """Record of a concurrent-edit conflict that was resolved Notion-wins."""
 
