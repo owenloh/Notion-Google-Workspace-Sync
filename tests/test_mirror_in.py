@@ -79,6 +79,28 @@ def test_edited_row_updates_properties(session, settings, mirrored):
     assert notion.updated[0]["properties"]["Status"]["status"]["name"] == "Complete"
 
 
+def test_conflict_notion_wins(session, settings, mirrored):
+    """If Notion drifted since last sync, a competing sheet edit is discarded."""
+    from sqlmodel import select
+
+    from app.ledger.models import Conflict
+
+    notion, google = mirrored
+    # Simulate an independent Notion edit (status changed in Notion).
+    notion.items["p1"].properties["Status"] = "Paused"
+    # And a competing edit to the same project's row in the sheet.
+    from app.connectors.google.sheets import record_to_row
+    rec = google.read_tab("Projects")[0]
+    rec["Status"] = "Complete"
+    google.tabs["Projects"][0] = record_to_row("Projects", rec)
+
+    n = MirrorIn(session, notion, google, settings).sync_sheets()
+    assert n == 0  # the sheet edit was not propagated
+    assert notion.updated == []
+    logged = session.exec(select(Conflict)).all()
+    assert len(logged) == 1 and logged[0].kept_system == "notion"
+
+
 def test_new_doc_under_mirrored_folder_creates_subpage(session, settings, mirrored):
     notion, google = mirrored
     # The project p1 has a mirrored folder; drop a new Doc inside it.

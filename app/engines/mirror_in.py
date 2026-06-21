@@ -59,14 +59,25 @@ class MirrorIn:
 
     def sync_sheets(self) -> int:
         """Reconcile all three tabs against Notion. Returns rows propagated."""
-        _, title_to_id = resolve.build_indexes(self.session)
+        id_to_title, title_to_id = resolve.build_indexes(self.session)
         propagated = 0
         for tab in ("Areas", "Projects", "Actions"):
             kind = TAB_TO_KIND[tab]
             for record in self.google.read_tab(tab):
-                if self._sync_row(kind, tab, record, title_to_id):
+                if self._sync_row(kind, tab, record, title_to_id, id_to_title):
                     propagated += 1
         return propagated
+
+    def _notion_property_hash(self, kind: str, notion_id: str, id_to_title) -> str | None:
+        """Live property hash of a Notion item (for conflict detection)."""
+        try:
+            item = self.notion.get_item(notion_id)
+        except Exception:  # noqa: BLE001 — treat an unreadable page as no drift
+            return None
+        values = dict(item.properties)
+        for col, ids in item.relations.items():
+            values[col] = resolve.names_for(ids, id_to_title)
+        return property_hash(kind, values)
 
     def _resolve_relations(self, kind: str, record: dict, title_to_id) -> dict[str, list[str]]:
         out: dict[str, list[str]] = {}
@@ -79,7 +90,7 @@ class MirrorIn:
             out[col] = ids
         return out
 
-    def _sync_row(self, kind: str, tab: str, record: dict, title_to_id) -> bool:
+    def _sync_row(self, kind: str, tab: str, record: dict, title_to_id, id_to_title) -> bool:
         notion_id = (record.get("_notion_id") or "").strip()
         incoming_hash = property_hash(kind, record)
 
@@ -88,6 +99,19 @@ class MirrorIn:
             ev = echo.SyncEvent("google", "property", incoming_hash)
             if not echo.should_propagate(self.session, pair, ev, self.settings).propagate:
                 return False
+            # Conflict guard (Notion wins): if Notion drifted from the last hash
+            # we recorded, an independent Notion edit beat this Google edit.
+            if pair is not None and pair.notion_prop_hash:
+                live = self._notion_property_hash(kind, notion_id, id_to_title)
+                if live is not None and live != pair.notion_prop_hash:
+                    from app.core import conflict
+
+                    conflict.resolve_notion_wins(
+                        self.session, pair, source_system="google", facet="property",
+                        discarded_value=str(record), kept_hash=live,
+                    )
+                    log.info("conflict on %s: Notion wins, sheet edit discarded", notion_id)
+                    return False
             relation_ids = self._resolve_relations(kind, record, title_to_id)
             properties = self.notion.build_properties(kind, record, relation_ids)
             self.notion.update_properties(notion_id, properties)
