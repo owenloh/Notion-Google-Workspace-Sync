@@ -81,6 +81,25 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
     assert any("PourDynamics engine" in v and "`p1`" in v for v in google.docs.values())
 
 
+def test_loose_pages_mirror_body_only(session, settings):
+    """Briefing/reference loose pages get a body Doc but no sheet row (no KeyError)."""
+    brief = make_item("b1", "briefing", "Alistair's Brief", properties={}, relations={})
+    refs = make_item("r1", "reference", "Unorganised References", properties={}, relations={})
+    items = {"b1": brief, "r1": refs}
+    bodies = {"b1": "today's brief", "r1": "a saved link"}
+    notion = FakeNotionSource(items, bodies, {}, spine_ids=[], loose_ids=["b1", "r1"])
+    google = FakeGoogleMirror()
+
+    counts = MirrorOut(session, notion, google, settings).sync_all()
+
+    assert counts["page"] == 0  # loose pages aren't counted as recursed children
+    assert any("today's brief" in v for v in google.docs.values())
+    assert any("a saved link" in v for v in google.docs.values())
+    # No spine sheet rows were written for loose pages.
+    assert google.read_tab("Areas") == []
+    assert google.read_tab("Actions") == []
+
+
 def test_mirror_is_idempotent(session, settings, world):
     notion, google = world
     mo = MirrorOut(session, notion, google, settings)

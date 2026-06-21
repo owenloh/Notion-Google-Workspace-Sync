@@ -152,7 +152,9 @@ class MirrorOut:
 
         pair = repo.get_pair_by_notion_id(self.session, item.notion_id)
         record = self._build_record(item, id_to_title, doc_id)
-        prop_hash = property_hash(item.kind, record) if item.kind != "page" else None
+        # Only spine kinds (area/project/action) get a sheet row; loose pages
+        # (briefing/reference) and generic child pages are body-only Docs.
+        prop_hash = property_hash(item.kind, record) if item.kind in _TAB else None
         # Body fetch is best-effort: a page whose body can't be read must not
         # abort the whole reconcile, so degrade to a placeholder and carry on.
         try:
