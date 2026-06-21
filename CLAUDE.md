@@ -1,6 +1,8 @@
 # CLAUDE.md — project context & current status
 
 Guidance for AI agents (and humans) working in this repo. Read this first.
+The full approved design is in **`docs/PLAN.md`** (verbatim); the Gemini Saved-info
+snippet is in **`docs/SAVED_INFO.md`**.
 
 ## What this is
 
