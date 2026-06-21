@@ -151,45 +151,124 @@ def _plain(block: dict, key: str) -> str:
     return rich_text_to_md(block.get(key, {}).get("rich_text", []))
 
 
-def notion_blocks_to_markdown(blocks: list[dict]) -> str:
-    """Convert a flat list of Notion block dicts to canonical Markdown.
+def _indent(text: str, depth: int) -> str:
+    """Indent every line of ``text`` by ``depth`` levels (2 spaces each)."""
+    if depth <= 0:
+        return text
+    pad = "  " * depth
+    return "\n".join(pad + line if line else line for line in text.split("\n"))
 
-    Each block renders to one chunk (code blocks span three lines); chunks are
-    joined by a blank line. Blank-line separators are dropped on the way back to
-    blocks, so the conversion round-trips stably.
+
+def notion_blocks_to_markdown(blocks: list[dict], depth: int = 0) -> str:
+    """Render Notion blocks to read-optimized Markdown (Notion → Google, one-way).
+
+    Blocks may carry a ``children`` list (populated by the reader for any block
+    with ``has_children``); children render recursively, indented one level. This
+    direction is one-way, so it is free to be richer than the reverse parser:
+    callouts → quotes, toggles → bold summary + indented body, tables → GFM,
+    images/bookmarks → links. ``child_page`` blocks are skipped (mirrored as their
+    own items).
     """
     chunks: list[str] = []
+
+    def emit(text: str) -> None:
+        chunks.append(_indent(text, depth))
+
+    rows: list[dict] = []  # accumulate table_row blocks for a parent table
+
     for block in blocks or []:
         t = block.get("type")
+        children = block.get("children") or []
+        child_md = (
+            notion_blocks_to_markdown(children, depth + 1)
+            if children and t not in {"child_page", "table"}
+            else ""
+        )
+
         if t == "heading_1":
-            chunks.append(f"# {_plain(block, t)}")
+            emit(f"# {_plain(block, t)}")
         elif t == "heading_2":
-            chunks.append(f"## {_plain(block, t)}")
+            emit(f"## {_plain(block, t)}")
         elif t == "heading_3":
-            chunks.append(f"### {_plain(block, t)}")
+            emit(f"### {_plain(block, t)}")
         elif t == "bulleted_list_item":
-            chunks.append(f"- {_plain(block, t)}")
+            emit(f"- {_plain(block, t)}")
         elif t == "numbered_list_item":
-            chunks.append(f"1. {_plain(block, t)}")
+            emit(f"1. {_plain(block, t)}")
         elif t == "to_do":
-            checked = block.get(t, {}).get("checked", False)
-            box = "[x]" if checked else "[ ]"
-            chunks.append(f"- {box} {_plain(block, t)}")
+            box = "[x]" if block.get(t, {}).get("checked") else "[ ]"
+            emit(f"- {box} {_plain(block, t)}")
         elif t == "quote":
-            chunks.append(f"> {_plain(block, t)}")
+            emit(f"> {_plain(block, t)}")
+        elif t == "callout":
+            icon = (block.get(t, {}).get("icon") or {}).get("emoji", "💡")
+            emit(f"> {icon} {_plain(block, t)}")
+        elif t == "toggle":
+            emit(f"**▸ {_plain(block, t)}**")
         elif t == "code":
             lang = block.get(t, {}).get("language", "") or ""
             lang = "" if lang == "plain text" else lang
-            chunks.append(f"```{lang}\n{_plain(block, t)}\n```")
+            emit(f"```{lang}\n{_plain(block, t)}\n```")
         elif t == "divider":
-            chunks.append("---")
+            emit("---")
         elif t == "paragraph":
-            chunks.append(_plain(block, t))
+            emit(_plain(block, t))
+        elif t == "table":
+            emit(_render_table(children))
+            child_md = ""  # consumed
+        elif t == "table_row":
+            rows.append(block)  # handled by parent table; ignore standalone
+        elif t == "image":
+            emit(_render_file_link(block, t, "image", "🖼"))
+        elif t in {"bookmark", "embed", "link_preview"}:
+            url = block.get(t, {}).get("url", "")
+            cap = _plain(block, t) or url
+            emit(f"[🔗 {cap}]({url})" if url else cap)
+        elif t in {"file", "pdf", "video", "audio"}:
+            emit(_render_file_link(block, t, t, "📎"))
+        elif t == "equation":
+            emit(f"$$ {block.get(t, {}).get('expression', '')} $$")
+        elif t == "child_database":
+            title = block.get(t, {}).get("title", "Database")
+            emit(f"> 📊 *Database: {title}* (open in Notion)")
+        elif t == "child_page":
+            continue  # mirrored as its own item
         else:
-            # Unknown / unsupported block: degrade to its plain text if any.
             text = _plain(block, t) if isinstance(block.get(t), dict) else ""
-            chunks.append(text)
-    return "\n\n".join(c for c in chunks).strip("\n")
+            if text:
+                emit(text)
+            else:
+                child_md = ""
+
+        if child_md:
+            chunks.append(child_md)
+
+    return "\n\n".join(c for c in chunks if c).strip("\n")
+
+
+def _render_table(row_blocks: list[dict]) -> str:
+    """Render a Notion table's ``table_row`` children as a GFM table."""
+    rows: list[list[str]] = []
+    for rb in row_blocks:
+        if rb.get("type") != "table_row":
+            continue
+        cells = rb.get("table_row", {}).get("cells", [])
+        rows.append([rich_text_to_md(cell) for cell in cells])
+    if not rows:
+        return ""
+    width = max(len(r) for r in rows)
+    rows = [r + [""] * (width - len(r)) for r in rows]
+    out = ["| " + " | ".join(rows[0]) + " |", "| " + " | ".join(["---"] * width) + " |"]
+    for r in rows[1:]:
+        out.append("| " + " | ".join(r) + " |")
+    return "\n".join(out)
+
+
+def _render_file_link(block: dict, key: str, label: str, icon: str) -> str:
+    data = block.get(key, {}) or {}
+    url = (data.get("external") or {}).get("url") or (data.get("file") or {}).get("url", "")
+    caption = rich_text_to_md(data.get("caption", [])) or label
+    return f"[{icon} {caption}]({url})" if url else f"{icon} {caption}"
 
 
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.*)$")

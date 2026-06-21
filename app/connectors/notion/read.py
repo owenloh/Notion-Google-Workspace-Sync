@@ -138,14 +138,39 @@ def get_block_children(client: NotionClient, block_id: str) -> list[dict]:
     return list(client.paginate("GET", f"/blocks/{block_id}/children"))
 
 
-def get_body_markdown(client: NotionClient, page_id: str) -> str:
-    """Fetch a page's top-level body blocks and render canonical Markdown.
+# Block types whose children are *not* recursed: child pages are mirrored as
+# their own items; child databases are rendered as a link, not expanded.
+_NO_RECURSE = {"child_page", "child_database"}
+_MAX_BLOCK_DEPTH = 6
 
-    Child *pages* are excluded here (they are mirrored as their own items);
-    nested block content (e.g. inside toggles) is left to a future pass.
+
+def _fetch_block_tree(client: NotionClient, block_id: str, depth: int = 0) -> list[dict]:
+    """Fetch a block's children recursively, attaching each block's ``children``.
+
+    Child-page blocks are dropped (separate items). Recursion is depth-limited as
+    a guard against pathological nesting.
     """
-    blocks = [b for b in get_block_children(client, page_id) if b.get("type") != "child_page"]
-    return notion_blocks_to_markdown(blocks)
+    blocks = []
+    for block in get_block_children(client, block_id):
+        if block.get("type") == "child_page":
+            continue
+        if (
+            block.get("has_children")
+            and block.get("type") not in _NO_RECURSE
+            and depth < _MAX_BLOCK_DEPTH
+        ):
+            block["children"] = _fetch_block_tree(client, block["id"], depth + 1)
+        blocks.append(block)
+    return blocks
+
+
+def get_body_markdown(client: NotionClient, page_id: str) -> str:
+    """Fetch a page's body (recursively, incl. nested blocks) as read Markdown.
+
+    Child *pages* are excluded (mirrored as their own items); all other nested
+    content — toggles, columns, indented lists, table rows — is captured.
+    """
+    return notion_blocks_to_markdown(_fetch_block_tree(client, page_id))
 
 
 def get_child_page_ids(client: NotionClient, page_id: str) -> list[str]:
