@@ -9,9 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
+
 from app.config import ACTIONS_DS_ID, AREAS_DS_ID, LEGACY_SPINE_DS_IDS, PROJECTS_DS_ID
 from app.connectors.notion.client import NotionClient
 from app.core.markdown import notion_blocks_to_markdown
+from app.logging import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -162,7 +167,16 @@ def _fetch_block_tree(client: NotionClient, block_id: str, depth: int = 0) -> li
             and block.get("type") not in _NO_RECURSE
             and depth < _MAX_BLOCK_DEPTH
         ):
-            block["children"] = _fetch_block_tree(client, block["id"], depth + 1)
+            # Some block types (synced blocks, link_to_page, certain inline
+            # databases) report has_children but 400/404 on /children. Skip those
+            # rather than aborting the whole crawl; the block itself still renders.
+            try:
+                block["children"] = _fetch_block_tree(client, block["id"], depth + 1)
+            except httpx.HTTPStatusError as exc:
+                log.warning(
+                    "skipping unreadable children of %s block %s: %s",
+                    block.get("type"), block.get("id"), exc,
+                )
         blocks.append(block)
     return blocks
 

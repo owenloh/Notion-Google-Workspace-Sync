@@ -1,6 +1,37 @@
 """Read-only rich/nested rendering (Notion blocks → Markdown, one-way)."""
 
+import httpx
+
+from app.connectors.notion import read as nread
 from app.core.markdown import notion_blocks_to_markdown
+
+
+class _FakeClient:
+    """Minimal stand-in for NotionClient.paginate over /blocks/{id}/children."""
+
+    def __init__(self, children_by_id, fail_ids=()):
+        self.children_by_id = children_by_id
+        self.fail_ids = set(fail_ids)
+
+    def paginate(self, method, path):
+        block_id = path.split("/")[2]  # /blocks/{id}/children
+        if block_id in self.fail_ids:
+            req = httpx.Request(method, "https://api.notion.com" + path)
+            resp = httpx.Response(400, request=req)
+            raise httpx.HTTPStatusError("400", request=req, response=resp)
+        return list(self.children_by_id.get(block_id, []))
+
+
+def test_fetch_block_tree_skips_unreadable_children():
+    # A toggle reports has_children but its /children 400s — it must be retained
+    # (rendered without children) and the overall crawl must not raise.
+    page_blocks = [
+        {"id": "bad", "type": "toggle", "has_children": True, "toggle": {"rich_text": []}}
+    ]
+    client = _FakeClient({"page": page_blocks}, fail_ids={"bad"})
+    tree = nread._fetch_block_tree(client, "page")
+    assert [b["id"] for b in tree] == ["bad"]
+    assert "children" not in tree[0]  # children skipped, block kept
 
 
 def _para(text):
