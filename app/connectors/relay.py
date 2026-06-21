@@ -62,6 +62,31 @@ def _extract_affected_id(data: object) -> str | None:
     return None
 
 
+def fetch_intray(settings: Settings | None = None) -> list[dict] | None:
+    """Best-effort read of the Microsoft To-Do in-tray via the Alistair API.
+
+    Returns the list of items (possibly empty) on success, or ``None`` on failure/
+    unconfigured — callers skip writing the mirror Doc on ``None`` so a transient
+    error never clobbers the last good copy.
+    """
+    settings = settings or get_settings()
+    if not settings.relay_api_base_url or not settings.relay_api_key:
+        return None
+    try:
+        resp = httpx.post(
+            f"{settings.relay_api_base_url.rstrip('/')}/api/intray",
+            headers={"X-API-Key": settings.relay_api_key},
+            json={"action": "list"},
+            timeout=20.0,
+        )
+        if resp.is_success:
+            data = resp.json()
+            return data.get("items", []) if isinstance(data, dict) else []
+    except (httpx.HTTPError, ValueError):
+        log.warning("could not fetch MS To-Do in-tray")
+    return None
+
+
 def fetch_skill_docs(
     settings: Settings | None = None, slugs: tuple[str, ...] = ()
 ) -> dict[str, str]:

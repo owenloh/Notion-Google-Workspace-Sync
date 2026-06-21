@@ -34,6 +34,24 @@ def build_dashboard_md(entries: list[CatalogEntry]) -> str:
     return "\n".join(lines).strip("\n")
 
 
+def build_intray_md(items: list[dict]) -> str:
+    """Read-only mirror of the Microsoft To-Do in-tray (quick-capture list)."""
+    lines = [
+        "# Microsoft To-Do — In-Tray",
+        "",
+        "_Read-only reflection of your Microsoft To-Do in-tray. Source of truth is "
+        "Microsoft To-Do._",
+        "",
+    ]
+    if not items:
+        lines.append("_(in-tray is empty)_")
+    else:
+        for it in items:
+            title = (it.get("title") or "").strip() or "(untitled)"
+            lines.append(f"- {title}")
+    return "\n".join(lines).strip("\n")
+
+
 def build_commands_md(
     entries: list[CatalogEntry],
     allowed_paths: list[str],
