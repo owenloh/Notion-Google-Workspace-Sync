@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session, select
 
-from app.ledger.models import Conflict, InflightMarker, SyncPair
+from app.ledger.models import Conflict, InflightMarker, SyncPair, SyncState
 
 
 def _utcnow() -> datetime:
@@ -174,6 +174,24 @@ def purge_expired_inflight(session: Session) -> int:
     if n:
         session.commit()
     return n
+
+
+# --- Sync state (watermarks / tokens) --------------------------------------
+
+def get_state(session: Session, key: str, default: str = "") -> str:
+    row = session.get(SyncState, key)
+    return row.value if row else default
+
+
+def set_state(session: Session, key: str, value: str) -> None:
+    row = session.get(SyncState, key)
+    if row is None:
+        row = SyncState(key=key, value=value)
+    else:
+        row.value = value
+        row.updated_at = _utcnow()
+    session.add(row)
+    session.commit()
 
 
 # --- Conflicts -------------------------------------------------------------
