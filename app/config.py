@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     )
     # Google Tasks list that serves as the command inbox.
     command_tasklist_name: str = "Notion Commands"
+    # Path used when a command task carries a bare body (no explicit path).
+    relay_default_path: str = "/api/notion/create-pages"
 
     notion_api_base: str = "https://api.notion.com/v1"
     notion_version: str = "2022-06-28"

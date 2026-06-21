@@ -55,6 +55,7 @@ def _from_kv_lines(text: str, default_path: str | None) -> RelayRequest | Comman
     path = default_path
     method = "POST"
     body: dict = {}
+    explicit_path = False
     for line in text.splitlines():
         line = line.strip()
         if not line or ":" not in line:
@@ -64,6 +65,7 @@ def _from_kv_lines(text: str, default_path: str | None) -> RelayRequest | Comman
         value = value.strip()
         if key == "path":
             path = value
+            explicit_path = True
         elif key == "method":
             method = value.upper() or "POST"
         elif key == "body":
@@ -75,6 +77,11 @@ def _from_kv_lines(text: str, default_path: str | None) -> RelayRequest | Comman
             body[key] = value
     if not path:
         return CommandError("missing 'path' and no default path configured")
+    # Nothing parsed (no explicit path and no fields) → treat as unparseable.
+    if not explicit_path and not body:
+        return CommandError(
+            "could not parse command; expected JSON {path,body} or 'key: value' lines"
+        )
     return RelayRequest(path=path, method=method, body=body)
 
 

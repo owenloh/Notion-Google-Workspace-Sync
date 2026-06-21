@@ -26,6 +26,9 @@ class FakeGoogleMirror:
         self.write_doc_calls = 0
         self.append_calls = 0
         self.structure_ready = False
+        # Command inbox (Google Tasks) surface.
+        self.tasks: list[dict] = []
+        self.finished: list[tuple[str, str]] = []  # (task_id, receipt)
 
     def ensure_index_structure(self) -> None:
         self.structure_ready = True
@@ -95,6 +98,28 @@ class FakeGoogleMirror:
     def update_row_at(self, tab: str, row_number: int, record: dict[str, Any]) -> None:
         self.tabs[tab][row_number - 2] = record_to_row(tab, record)
 
+    # --- command inbox ---
+    def add_command(self, notes: str, title: str = "cmd", task_id: str | None = None) -> dict:
+        task = {"id": task_id or f"t{next(self._ids)}", "title": title, "notes": notes}
+        self.tasks.append(task)
+        return task
+
+    def pending_commands(self) -> list[dict]:
+        out = []
+        for t in self.tasks:
+            if t.get("status") == "completed":
+                continue
+            notes = t.get("notes") or ""
+            if notes.lstrip().startswith(("✓", "✗")):
+                continue
+            out.append(t)
+        return out
+
+    def finish_command(self, task: dict, receipt: str) -> None:
+        task["status"] = "completed"
+        task["notes"] = f"{receipt}\n---\n{task.get('notes') or ''}".strip()
+        self.finished.append((task["id"], receipt))
+
 
 class FakeNotionSource:
     def __init__(self, items: dict[str, NotionItem], bodies: dict[str, str],
@@ -148,6 +173,20 @@ class FakeNotionSource:
         from app.connectors.notion.write import build_properties
 
         return build_properties(kind, values, relation_ids)
+
+
+class FakeRelay:
+    """Records forwarded requests and returns a scripted result."""
+
+    def __init__(self, result=None):
+        from app.connectors.relay import RelayResult
+
+        self.calls: list = []
+        self.result = result or RelayResult(ok=True, status=200, summary="ok", affected_id=None)
+
+    def execute(self, req):
+        self.calls.append(req)
+        return self.result
 
 
 def make_item(notion_id, kind, title, properties=None, relations=None,

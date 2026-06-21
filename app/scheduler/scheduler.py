@@ -36,9 +36,9 @@ def build_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
     scheduler.add_job(
-        _guard(jobs.poll_google),
-        IntervalTrigger(seconds=settings.google_poll_seconds),
-        id="poll_google",
+        _guard(jobs.poll_commands),
+        IntervalTrigger(seconds=settings.command_poll_seconds),
+        id="poll_commands",
         max_instances=1,
         coalesce=True,
     )

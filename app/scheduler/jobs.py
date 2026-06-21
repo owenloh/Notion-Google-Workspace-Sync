@@ -1,10 +1,10 @@
-"""Scheduled sync jobs: Notion poll, Google poll, nightly reconcile."""
+"""Scheduled sync jobs: command inbox poll, Notion delta poll, full reconcile."""
 
 from __future__ import annotations
 
 from app.connectors.notion.read import NotionItem
 from app.core.tombstone import purge_expired
-from app.engines.mirror_in import MirrorIn
+from app.engines.commands import CommandExecutor
 from app.engines.mirror_out import MirrorOut
 from app.ledger import repo
 from app.ledger.db import session_scope
@@ -14,7 +14,6 @@ from app.runtime import Runtime, get_runtime
 log = get_logger(__name__)
 
 _NOTION_WATERMARK = "notion_watermark"
-_DRIVE_TOKEN = "drive_page_token"
 
 
 def select_changed(
@@ -48,23 +47,13 @@ def poll_notion(rt: Runtime | None = None) -> int:
         return len(changed)
 
 
-def poll_google(rt: Runtime | None = None) -> int:
-    """Pull Sheet edits and Drive changes into Notion. Returns count propagated."""
-    from app.connectors.google import drive as gdrive
-
+def poll_commands(rt: Runtime | None = None) -> int:
+    """Execute pending command tasks (Google Tasks → relay → Notion). Returns count."""
     rt = rt or get_runtime()
     with session_scope() as session:
-        engine = MirrorIn(session, rt.notion, rt.google, rt.settings)
-        n = engine.sync_sheets()
-
-        token = repo.get_state(session, _DRIVE_TOKEN)
-        if not token:
-            token = gdrive.get_start_page_token(rt.google.services.drive)
-        changes, new_token = gdrive.list_changes(rt.google.services.drive, token)
-        n += engine.sync_drive(changes)
-        repo.set_state(session, _DRIVE_TOKEN, new_token)
+        n = CommandExecutor(session, rt.notion, rt.google, rt.relay, rt.settings).run_pending()
         if n:
-            log.info("poll_google propagated %d change(s)", n)
+            log.info("poll_commands handled %d command(s)", n)
         return n
 
 
