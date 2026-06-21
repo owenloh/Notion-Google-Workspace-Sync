@@ -34,6 +34,11 @@ class GoogleMirror:
         self.index_sheet_id = index_sheet_id
         self.command_tasklist_name = command_tasklist_name
         self._command_list_id: str | None = None
+        # Per-sync sheet row index ({tab: {notion_id: row}}) + next free row, so
+        # upserts don't read the whole tab per row (which blows the Sheets API
+        # 60-reads/min quota during a full sync). Reset at the start of sync_all.
+        self._tab_index: dict[str, dict[str, int]] = {}
+        self._tab_next_row: dict[str, int] = {}
 
     # --- self-healing root folder + index sheet ---
     def _is_live(self, file_id: str) -> bool:
@@ -135,20 +140,39 @@ class GoogleMirror:
         self.ensure_root()  # heal the root first (sheet is created under it)
         sheet_id = self.ensure_index_sheet()
         gsheets.ensure_structure(self.services.sheets, sheet_id)
+        self.reset_sheet_cache()  # force a fresh single read per tab this sync
 
     def read_tab(self, tab: str) -> list[dict[str, Any]]:
         return gsheets.read_records(self.services.sheets, self.index_sheet_id, tab)
 
+    def reset_sheet_cache(self) -> None:
+        self._tab_index = {}
+        self._tab_next_row = {}
+
+    def _prime_tab(self, tab: str) -> None:
+        """Read a tab once and build a {notion_id: row} index + next free row."""
+        records = self.read_tab(tab)
+        self._tab_index[tab] = {
+            r["_notion_id"]: r["_row"] for r in records if r.get("_notion_id")
+        }
+        self._tab_next_row[tab] = max((r["_row"] for r in records), default=1) + 1
+
     def upsert_row(self, tab: str, notion_id: str, record: dict[str, Any]) -> int:
-        """Update the row whose ``_notion_id`` matches, else append. Returns row #."""
-        for existing in self.read_tab(tab):
-            if existing.get("_notion_id") == notion_id:
-                row = existing["_row"]
-                gsheets.update_record(self.services.sheets, self.index_sheet_id, tab, row, record)
-                return row
-        gsheets.append_record(self.services.sheets, self.index_sheet_id, tab, record)
-        # The appended row number is the next after current data rows.
-        return len(self.read_tab(tab)) + 1
+        """Update the row matching ``notion_id``, else write a new one. Returns row #.
+
+        Uses a cached per-tab index so a full sync does ONE read per tab instead
+        of one (or two) per row — otherwise the Sheets 60-reads/min quota is hit.
+        """
+        if tab not in self._tab_index:
+            self._prime_tab(tab)
+        index = self._tab_index[tab]
+        row = index.get(notion_id)
+        if row is None:
+            row = self._tab_next_row[tab]
+            self._tab_next_row[tab] = row + 1
+            index[notion_id] = row
+        gsheets.update_record(self.services.sheets, self.index_sheet_id, tab, row, record)
+        return row
 
     def update_row_at(self, tab: str, row_number: int, record: dict[str, Any]) -> None:
         gsheets.update_record(self.services.sheets, self.index_sheet_id, tab, row_number, record)

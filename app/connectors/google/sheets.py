@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.connectors.google._retry import execute as _exec
+
 # Ordered headers per tab. Bookkeeping columns are prefixed with "_".
 _BOOKKEEPING = ["Doc", "_notion_id", "_last_edited", "_hash"]
 TAB_COLUMNS: dict[str, list[str]] = {
@@ -61,7 +63,7 @@ def split_relation(value: str) -> list[str]:
 
 def ensure_structure(sheets, spreadsheet_id: str) -> None:
     """Create any missing tabs and write header rows."""
-    meta = sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    meta = _exec(sheets.spreadsheets().get(spreadsheetId=spreadsheet_id))
     existing = {s["properties"]["title"] for s in meta.get("sheets", [])}
     requests = [
         {"addSheet": {"properties": {"title": tab}}}
@@ -69,25 +71,22 @@ def ensure_structure(sheets, spreadsheet_id: str) -> None:
         if tab not in existing
     ]
     if requests:
-        sheets.spreadsheets().batchUpdate(
+        _exec(sheets.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id, body={"requests": requests}
-        ).execute()
+        ))
     for tab, cols in TAB_COLUMNS.items():
-        sheets.spreadsheets().values().update(
+        _exec(sheets.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{tab}!A1",
             valueInputOption="RAW",
             body={"values": [cols]},
-        ).execute()
+        ))
 
 
 def read_records(sheets, spreadsheet_id: str, tab: str) -> list[dict[str, Any]]:
     """Return data rows as records, each annotated with its 1-based ``_row``."""
-    resp = (
-        sheets.spreadsheets()
-        .values()
-        .get(spreadsheetId=spreadsheet_id, range=f"{tab}!A2:Z")
-        .execute()
+    resp = _exec(
+        sheets.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=f"{tab}!A2:Z")
     )
     out = []
     for offset, row in enumerate(resp.get("values", []), start=2):
@@ -98,21 +97,21 @@ def read_records(sheets, spreadsheet_id: str, tab: str) -> list[dict[str, Any]]:
 
 
 def append_record(sheets, spreadsheet_id: str, tab: str, record: dict[str, Any]) -> None:
-    sheets.spreadsheets().values().append(
+    _exec(sheets.spreadsheets().values().append(
         spreadsheetId=spreadsheet_id,
         range=f"{tab}!A1",
         valueInputOption="USER_ENTERED",
         insertDataOption="INSERT_ROWS",
         body={"values": [record_to_row(tab, record)]},
-    ).execute()
+    ))
 
 
 def update_record(
     sheets, spreadsheet_id: str, tab: str, row_number: int, record: dict[str, Any]
 ) -> None:
-    sheets.spreadsheets().values().update(
+    _exec(sheets.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
         range=f"{tab}!A{row_number}",
         valueInputOption="USER_ENTERED",
         body={"values": [record_to_row(tab, record)]},
-    ).execute()
+    ))

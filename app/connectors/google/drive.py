@@ -6,6 +6,7 @@ either side relocate cleanly.
 
 from __future__ import annotations
 
+from app.connectors.google._retry import execute as _exec
 from app.logging import get_logger
 
 log = get_logger(__name__)
@@ -24,10 +25,8 @@ def find_child(drive, parent_id: str, name: str, mime: str | None = None) -> str
     q = f"'{parent_id}' in parents and name = '{_escape(name)}' and trashed = false"
     if mime:
         q += f" and mimeType = '{mime}'"
-    resp = (
-        drive.files()
-        .list(q=q, fields="files(id,name)", pageSize=1, supportsAllDrives=True)
-        .execute()
+    resp = _exec(
+        drive.files().list(q=q, fields="files(id,name)", pageSize=1, supportsAllDrives=True)
     )
     files = resp.get("files", [])
     return files[0]["id"] if files else None
@@ -38,9 +37,8 @@ def list_children(drive, parent_id: str) -> list[dict]:
     children: list[dict] = []
     page_token = None
     while True:
-        resp = (
-            drive.files()
-            .list(
+        resp = _exec(
+            drive.files().list(
                 q=f"'{parent_id}' in parents and trashed = false",
                 fields="nextPageToken, files(id,name,mimeType)",
                 pageSize=200,
@@ -49,7 +47,6 @@ def list_children(drive, parent_id: str) -> list[dict]:
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
             )
-            .execute()
         )
         children.extend(resp.get("files", []))
         page_token = resp.get("nextPageToken")
@@ -63,13 +60,13 @@ def ensure_folder(drive, name: str, parent_id: str) -> str:
     if existing:
         return existing
     meta = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
-    created = drive.files().create(body=meta, fields="id", supportsAllDrives=True).execute()
+    created = _exec(drive.files().create(body=meta, fields="id", supportsAllDrives=True))
     return created["id"]
 
 
 def create_doc(drive, name: str, parent_id: str) -> str:
     meta = {"name": name, "mimeType": DOC_MIME, "parents": [parent_id]}
-    created = drive.files().create(body=meta, fields="id", supportsAllDrives=True).execute()
+    created = _exec(drive.files().create(body=meta, fields="id", supportsAllDrives=True))
     return created["id"]
 
 
