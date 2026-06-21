@@ -88,8 +88,11 @@ Three linked databases (data-source ids):
 - **Actions** `1d3eb1dd-2803-4692-a4d5-6ca9709ae570` — Name, Action Status
   (Next/Waiting/Someday/Done), Due, Project(→Projects), Checkbox
 
-Loose pages: Briefing "Alistair's Brief" `3806f0cc-dd76-80bb-9e16-fcce720de5ee`;
-References "Unorganised References" `37e6f0cc-dd76-8086-a07d-f6704b0c25df`.
+Loose pages (mirrored as items, each in its own section folder; children recursed):
+Briefing "Alistair's Brief" `3806f0cc-dd76-80bb-9e16-fcce720de5ee`; References
+"Unorganised References" `37e6f0cc-dd76-8086-a07d-f6704b0c25df`; Horizons
+"Horizons (drafting)" `3806f0cc-dd76-803e-a35d-c9878567e4cc`; Library hub
+`1fa6f0cc-dd76-809e-8bcb-e5db5ae28237`. (See `LOOSE_PAGES` + `_SECTION_FOLDER`.)
 
 ## Google-side layout produced
 

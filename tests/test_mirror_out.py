@@ -82,19 +82,24 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
 
 
 def test_loose_pages_mirror_body_only(session, settings):
-    """Briefing/reference loose pages get a body Doc but no sheet row (no KeyError)."""
+    """Loose pages get a body Doc in their section folder, no sheet row (no KeyError)."""
     brief = make_item("b1", "briefing", "Alistair's Brief", properties={}, relations={})
     refs = make_item("r1", "reference", "Unorganised References", properties={}, relations={})
-    items = {"b1": brief, "r1": refs}
-    bodies = {"b1": "today's brief", "r1": "a saved link"}
-    notion = FakeNotionSource(items, bodies, {}, spine_ids=[], loose_ids=["b1", "r1"])
+    horizons = make_item("h1", "horizons", "Horizons (drafting)", properties={}, relations={})
+    library = make_item("l1", "library", "Library", properties={}, relations={})
+    items = {"b1": brief, "r1": refs, "h1": horizons, "l1": library}
+    bodies = {"b1": "today's brief", "r1": "a saved link", "h1": "my vision", "l1": "reading list"}
+    notion = FakeNotionSource(items, bodies, {}, spine_ids=[], loose_ids=["b1", "r1", "h1", "l1"])
     google = FakeGoogleMirror()
 
     counts = MirrorOut(session, notion, google, settings).sync_all()
 
-    assert counts["page"] == 0  # loose pages aren't counted as recursed children
-    assert any("today's brief" in v for v in google.docs.values())
-    assert any("a saved link" in v for v in google.docs.values())
+    assert counts["failed"] == 0
+    for text in ("today's brief", "a saved link", "my vision", "reading list"):
+        assert any(text in v for v in google.docs.values())
+    # Each loose page lands in its own section folder.
+    names = {meta[0] for meta in google.folder_meta.values()}
+    assert {"Briefing", "References", "Horizons", "Library"} <= names
     # No spine sheet rows were written for loose pages.
     assert google.read_tab("Areas") == []
     assert google.read_tab("Actions") == []

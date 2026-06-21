@@ -60,8 +60,6 @@ class MirrorOut:
         id_to_title, _ = resolve.build_indexes(self.session, extra)
 
         areas_root = self.google.ensure_folder("Areas", self.google.root_folder_id)
-        refs_root = self.google.ensure_folder("References", self.google.root_folder_id)
-        brief_root = self.google.ensure_folder("Briefing", self.google.root_folder_id)
 
         counts = {"area": 0, "project": 0, "action": 0, "page": 0, "failed": 0}
 
@@ -96,9 +94,10 @@ class MirrorOut:
                 counts["failed"] += 1
 
         for page in loose:
-            root = brief_root if page.kind == "briefing" else refs_root
+            section = _SECTION_FOLDER.get(page.kind, "Pages")
+            parent = self.google.ensure_folder(section, self.google.root_folder_id)
             try:
-                self._mirror_body_item(page, root, id_to_title)
+                self._mirror_body_item(page, parent, id_to_title)
             except Exception:  # noqa: BLE001
                 log.exception("mirror failed for loose page %s; skipping", page.title)
                 counts["failed"] += 1
@@ -311,10 +310,9 @@ class MirrorOut:
             # this, the delta-poll's mirror_item re-created area folders at the
             # mirror root, duplicating them.
             return self.google.ensure_folder("Areas", self.google.root_folder_id)
-        if item.kind == "briefing":
-            return self.google.ensure_folder("Briefing", self.google.root_folder_id)
-        if item.kind == "reference":
-            return self.google.ensure_folder("References", self.google.root_folder_id)
+        section = _SECTION_FOLDER.get(item.kind)
+        if section:
+            return self.google.ensure_folder(section, self.google.root_folder_id)
         # Generic child page whose parent folder is recorded.
         pair = repo.get_pair_by_notion_id(self.session, item.parent_id or "")
         if pair and pair.drive_folder_id:
@@ -323,6 +321,14 @@ class MirrorOut:
 
 
 _TAB = {"area": "Areas", "project": "Projects", "action": "Actions"}
+
+# Loose-page kinds → their top-level section folder under the mirror root.
+_SECTION_FOLDER = {
+    "briefing": "Briefing",
+    "reference": "References",
+    "horizons": "Horizons",
+    "library": "Library",
+}
 
 
 def _norm(notion_id: str | None) -> str:
