@@ -242,6 +242,14 @@ def test_prune_removes_untracked_orphans(session, settings, world):
     assert google.is_live(proj.drive_folder_id)        # tracked project kept
 
 
+def test_refresh_reference_docs_regenerates_dashboard(session, settings, world):
+    """The incremental path can refresh the catalog without a full reconcile."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).refresh_reference_docs()
+    dash = next(google.docs[d] for d, (n, _) in google.doc_meta.items() if n == "_Dashboard")
+    assert "Career" in dash and "`a1`" in dash      # spine listed with ids
+
+
 def test_dashboard_keeps_areas_projects_drops_done_actions(session, settings):
     """_Dashboard lists all Areas/Projects but omits Done / checkboxed Actions."""
     area = make_item("a1", "area", "Retired Area",

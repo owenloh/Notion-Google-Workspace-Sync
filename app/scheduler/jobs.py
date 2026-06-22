@@ -64,6 +64,13 @@ def poll_incremental(rt: Runtime | None = None) -> int:
                     done += 1
                 except Exception:  # noqa: BLE001 — per-item isolation
                     log.exception("incremental reflect failed for %s", it.notion_id)
+            # A spine change (new/renamed/completed Area/Project/Action) must refresh
+            # the _Dashboard catalog now, not wait for the daily full reconcile.
+            if any(it.kind in {"area", "project", "action"} for it in changed):
+                try:
+                    engine.refresh_reference_docs()
+                except Exception:  # noqa: BLE001 — best-effort
+                    log.exception("reference-doc refresh in poll_incremental failed")
             try:
                 engine.refresh_intray()
             except Exception:  # noqa: BLE001 — best-effort

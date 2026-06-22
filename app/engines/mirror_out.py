@@ -227,6 +227,14 @@ class MirrorOut:
             log.info("removed mirror for deleted/archived %s (%s)", pair.kind, pair.notion_id)
         return removed
 
+    def refresh_reference_docs(self) -> None:
+        """Re-fetch the spine and regenerate `_Dashboard`/`_Commands` (hash-gated).
+
+        Called from the incremental poll when a spine item changed, so the catalog
+        isn't stale until the daily full reconcile.
+        """
+        self._write_reference_docs(self.notion.spine_items())
+
     def _write_reference_docs(self, spine: list[NotionItem]) -> None:
         """(Re)generate the read-only `_Dashboard` and `_Commands` Docs.
 
