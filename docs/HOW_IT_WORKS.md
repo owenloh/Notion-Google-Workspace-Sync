@@ -61,6 +61,17 @@ Drive: Notion Mirror/
 (recursion); projects land under an area by the **`Area` relation**. Both can coexist
 in one `<Area>/` dir.
 
+**Multi-relations:** a Drive folder has one parent, so a project with **two Areas**
+is placed under the **first** Area only (not duplicated); an action with **two
+Projects** has no folder anyway. The *full* relation is preserved as **data** — the
+sheet/`_Dashboard` columns list **all** related names — so nothing is lost, the tree
+just picks one primary home.
+
+**Body fidelity:** a page's body Doc renders nested content (callouts, toggles,
+tables, **columns**). A sub-page appears in the body as a named marker —
+`> 📄 Sub-page: <title> … (id <id>)` — not the sub-page's content (that's its own Doc
+in the same folder); the name + id let Gemini locate it via `_Dashboard`.
+
 ## Identity & self-healing (addressed by ledger id, not name)
 
 - **Rename** → folder/Doc renamed *in place* (same Drive id, no orphan).
