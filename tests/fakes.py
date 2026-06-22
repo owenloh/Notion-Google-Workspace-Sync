@@ -146,6 +146,11 @@ class FakeGoogleMirror:
             notes = t.get("notes") or ""
             if notes.lstrip().startswith(("✓", "✗")):
                 continue
+            # Mirror production's default-list behaviour: only JSON-shaped tasks are
+            # commands, so personal tasks on the shared list are left untouched.
+            text = notes.strip() or (t.get("title") or "").strip()
+            if not text.startswith(("{", "[")):
+                continue
             out.append(t)
         return out
 

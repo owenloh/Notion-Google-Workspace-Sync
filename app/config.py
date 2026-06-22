@@ -88,13 +88,19 @@ class Settings(BaseSettings):
         "/api/notion/create-pages,/api/notion/update-page,/api/notion/create-comment,"
         "/api/intray"
     )
-    # Google Tasks list that serves as the command inbox.
-    command_tasklist_name: str = "Notion Commands"
+    # Google Tasks list used as the command inbox. "@default" = the user's primary
+    # list ("My Tasks"), because Gemini Live can't reliably target a named list.
+    # On the shared default list only JSON-shaped tasks are treated as commands, so
+    # personal tasks are never touched. Set a title to use a dedicated list instead.
+    command_tasklist_name: str = "@default"
     # Path used when a command task carries a bare body (no explicit path).
     relay_default_path: str = "/api/notion/create-pages"
 
     notion_api_base: str = "https://api.notion.com/v1"
     notion_version: str = "2022-06-28"
+    # Some pages (e.g. wiki/newer block types) 400 on the pinned version when
+    # listing block children; the read path retries once with this newer version.
+    notion_version_fallback: str = "2025-09-03"
 
     @property
     def notion_roots(self) -> list[str]:

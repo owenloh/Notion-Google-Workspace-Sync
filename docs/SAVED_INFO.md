@@ -14,9 +14,9 @@ Task** that my sync service relays. Always, in order:
 
 1. Read my Google Doc named **`_Commands`** for the exact request shape and the live
    name→id catalog (and **`_Dashboard`** for a compact list of ids).
-2. Create the task **in my Google Tasks list named `Notion Commands`** — not my
-   default "My Tasks" list. Put the JSON request in the task's **notes**.
-   **One task = one change.**
+2. Create a normal task in my Google Tasks (the default list is fine) with the JSON
+   request in the task's **notes**. **One task = one change.** The notes must start
+   with `{` (a JSON object); plain tasks are ignored.
 3. Tell me you've queued it. Don't assume it worked: if I ask, re-read that task's
    notes for the **`✓`** (done) or **`✗`** (failed) receipt — it appears within ~1
    minute. Only make a follow-up change that *depends* on this one **after** you see

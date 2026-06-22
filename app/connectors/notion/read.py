@@ -142,8 +142,22 @@ def get_page(client: NotionClient, page_id: str) -> NotionItem:
 
 
 def get_block_children(client: NotionClient, block_id: str) -> list[dict]:
-    """Return the raw child blocks of a block/page (one level)."""
-    return list(client.paginate("GET", f"/blocks/{block_id}/children"))
+    """Return the raw child blocks of a block/page (one level).
+
+    Some pages (wiki / newer block types) return 400 under the pinned API version;
+    retry once with the configured newer fallback version before giving up.
+    """
+    path = f"/blocks/{block_id}/children"
+    try:
+        return list(client.paginate("GET", path))
+    except httpx.HTTPStatusError as exc:
+        if exc.response is not None and exc.response.status_code == 400:
+            fallback = client.settings.notion_version_fallback
+            if fallback and fallback != client.settings.notion_version:
+                log.warning("blocks/%s/children 400 on %s; retrying with %s",
+                            block_id, client.settings.notion_version, fallback)
+                return list(client.paginate("GET", path, version=fallback))
+        raise
 
 
 # Block types whose children are *not* recursed: child pages are mirrored as

@@ -19,9 +19,10 @@ from app.connectors.notion.read import NotionItem
 # pages are recursed under them.
 LOOSE_PAGES = {
     "3806f0cc-dd76-80bb-9e16-fcce720de5ee": "briefing",   # Alistair's Brief
-    "37e6f0cc-dd76-8086-a07d-f6704b0c25df": "reference",  # Unorganised References
     "3806f0cc-dd76-803e-a35d-c9878567e4cc": "horizons",   # Horizons (drafting)
     "1fa6f0cc-dd76-809e-8bcb-e5db5ae28237": "library",    # Library hub
+    # "Unorganised References" (37e6f0cc) is intentionally NOT a top-level root: it
+    # lives under Library in Notion, so it mirrors there via Library's recursion.
 }
 
 
