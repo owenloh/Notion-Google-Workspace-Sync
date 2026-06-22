@@ -64,13 +64,13 @@ def poll_incremental(rt: Runtime | None = None) -> int:
                     done += 1
                 except Exception:  # noqa: BLE001 — per-item isolation
                     log.exception("incremental reflect failed for %s", it.notion_id)
-            # A spine change (new/renamed/completed Area/Project/Action) must refresh
-            # the _Dashboard catalog now, not wait for the daily full reconcile.
-            if any(it.kind in {"area", "project", "action"} for it in changed):
-                try:
-                    engine.refresh_reference_docs()
-                except Exception:  # noqa: BLE001 — best-effort
-                    log.exception("reference-doc refresh in poll_incremental failed")
+            # Keep the catalog fresh AND catch spine deletions/archives every cycle
+            # (cheap, one spine fetch) so Gemini sees current ids/status within ~a
+            # poll, not only at the daily reconcile.
+            try:
+                engine.reconcile_spine()
+            except Exception:  # noqa: BLE001 — best-effort
+                log.exception("spine reconcile in poll_incremental failed")
             try:
                 engine.refresh_intray()
             except Exception:  # noqa: BLE001 — best-effort

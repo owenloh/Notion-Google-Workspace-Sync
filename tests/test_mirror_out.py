@@ -242,12 +242,31 @@ def test_prune_removes_untracked_orphans(session, settings, world):
     assert google.is_live(proj.drive_folder_id)        # tracked project kept
 
 
-def test_refresh_reference_docs_regenerates_dashboard(session, settings, world):
-    """The incremental path can refresh the catalog without a full reconcile."""
+def test_reconcile_spine_regenerates_dashboard(session, settings, world):
+    """The incremental path refreshes the catalog without a full reconcile."""
     notion, google = world
-    MirrorOut(session, notion, google, settings).refresh_reference_docs()
+    MirrorOut(session, notion, google, settings).reconcile_spine()
     dash = next(google.docs[d] for d, (n, _) in google.doc_meta.items() if n == "_Dashboard")
     assert "Career" in dash and "`a1`" in dash      # spine listed with ids
+
+
+def test_reconcile_spine_removes_deleted_spine_item(session, settings, world):
+    """A spine item gone from Notion is dropped by the incremental spine pass
+    (no waiting for the daily reconcile)."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).sync_all()
+    proj = repo.get_pair_by_notion_id(session, "p1")
+    folder = proj.drive_folder_id
+    assert google.is_live(folder)
+
+    # Project deleted in Notion: gone from the spine query AND get_item.
+    notion.spine_ids = ["a1", "t1"]
+    del notion.items["p1"]
+
+    removed = MirrorOut(session, notion, google, settings).reconcile_spine()
+    assert removed >= 1
+    assert not google.is_live(folder)                       # mirror dropped ~a poll later
+    assert repo.get_pair_by_notion_id(session, "p1").tombstone is True
 
 
 def test_dashboard_keeps_areas_projects_drops_done_actions(session, settings):
