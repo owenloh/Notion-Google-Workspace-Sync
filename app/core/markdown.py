@@ -232,13 +232,19 @@ def notion_blocks_to_markdown(blocks: list[dict], depth: int = 0) -> str:
             title = block.get(t, {}).get("title", "Database")
             emit(f"> 📊 *Database: {title}* (open in Notion)")
         elif t == "child_page":
-            continue  # mirrored as its own item
+            # The sub-page is mirrored as its own Doc in this same folder; leave a
+            # marker so Gemini knows it exists here (by name) and can open that Doc.
+            title = block.get(t, {}).get("title") or "Untitled"
+            bid = block.get("id") or ""
+            marker = f"> 📄 Sub-page: **{title}** — mirrored as its own Doc in this folder"
+            emit(f"{marker} (id `{bid}`)" if bid else marker)
         else:
+            # Unknown/container block: emit its own text if any, but KEEP child_md so
+            # layout containers with no text of their own (column_list, column,
+            # synced_block, …) still render their children instead of dropping them.
             text = _plain(block, t) if isinstance(block.get(t), dict) else ""
             if text:
                 emit(text)
-            else:
-                child_md = ""
 
         if child_md:
             chunks.append(child_md)
