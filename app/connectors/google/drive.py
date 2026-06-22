@@ -70,23 +70,31 @@ def create_doc(drive, name: str, parent_id: str) -> str:
     return created["id"]
 
 
+def create_folder(drive, name: str, parent_id: str) -> str:
+    """Always create a fresh folder (no find-or-create). Used for per-item folders,
+    which are tracked by ledger id, so two same-named items get distinct folders."""
+    meta = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
+    created = _exec(drive.files().create(body=meta, fields="id", supportsAllDrives=True))
+    return created["id"]
+
+
 def rename_file(drive, file_id: str, name: str) -> None:
-    drive.files().update(fileId=file_id, body={"name": name}, supportsAllDrives=True).execute()
+    _exec(drive.files().update(fileId=file_id, body={"name": name}, supportsAllDrives=True))
 
 
 def move_file(drive, file_id: str, new_parent_id: str) -> None:
-    meta = drive.files().get(fileId=file_id, fields="parents", supportsAllDrives=True).execute()
+    meta = _exec(drive.files().get(fileId=file_id, fields="parents", supportsAllDrives=True))
     prev = ",".join(meta.get("parents", []))
-    drive.files().update(
+    _exec(drive.files().update(
         fileId=file_id,
         addParents=new_parent_id,
         removeParents=prev,
         supportsAllDrives=True,
-    ).execute()
+    ))
 
 
 def trash_file(drive, file_id: str) -> None:
-    drive.files().update(fileId=file_id, body={"trashed": True}, supportsAllDrives=True).execute()
+    _exec(drive.files().update(fileId=file_id, body={"trashed": True}, supportsAllDrives=True))
 
 
 def doc_url(doc_id: str) -> str:

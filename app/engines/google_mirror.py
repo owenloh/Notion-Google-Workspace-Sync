@@ -93,13 +93,36 @@ class GoogleMirror:
             self.index_sheet_id = new_id
         return new_id
 
+    def is_live(self, file_id: str) -> bool:
+        """Public: True if the Drive id exists and isn't trashed."""
+        return self._is_live(file_id)
+
     # --- folders / docs ---
     def ensure_folder(self, name: str, parent_id: str) -> str:
+        """Find-or-create by name. Used for singleton section folders (Areas, etc.)."""
         return gdrive.ensure_folder(self.services.drive, name, parent_id)
+
+    def create_folder(self, name: str, parent_id: str) -> str:
+        """Always create a fresh folder (per-item folders, tracked by ledger id)."""
+        return gdrive.create_folder(self.services.drive, name, parent_id)
+
+    def create_doc(self, name: str, parent_id: str) -> str:
+        """Always create a fresh Doc (per-item Docs, tracked by ledger id)."""
+        return gdrive.create_doc(self.services.drive, name, parent_id)
 
     def ensure_doc(self, name: str, parent_id: str) -> str:
         existing = gdrive.find_child(self.services.drive, parent_id, name, gdrive.DOC_MIME)
         return existing or gdrive.create_doc(self.services.drive, name, parent_id)
+
+    def clear_row(self, tab: str, notion_id: str) -> None:
+        """Blank the sheet row for a deleted item (Sheets has no row delete)."""
+        if tab not in self._tab_index:
+            self._prime_tab(tab)
+        row = self._tab_index.get(tab, {}).pop(notion_id, None)
+        if row is not None:
+            from app.connectors.google import sheets as _gs
+            blank = {c: "" for c in _gs.TAB_COLUMNS.get(tab, [])}
+            gsheets.update_record(self.services.sheets, self.index_sheet_id, tab, row, blank)
 
     def write_doc(self, doc_id: str, markdown: str) -> None:
         gdocs.write_markdown(self.services.docs, doc_id, markdown)

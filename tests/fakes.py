@@ -41,14 +41,26 @@ class FakeGoogleMirror:
             self.folder_meta[fid] = (name, parent_id)
         return self.folders[key]
 
-    def ensure_doc(self, name: str, parent_id: str) -> str:
-        for did, (n, p) in self.doc_meta.items():
-            if n == name and p == parent_id:
-                return did
+    def create_folder(self, name: str, parent_id: str) -> str:
+        """Always a fresh folder (per-item; no name dedup)."""
+        fid = f"F{next(self._ids)}"
+        self.folder_meta[fid] = (name, parent_id)
+        return fid
+
+    def create_doc(self, name: str, parent_id: str) -> str:
         did = f"D{next(self._ids)}"
         self.doc_meta[did] = (name, parent_id)
         self.docs.setdefault(did, "")
         return did
+
+    def ensure_doc(self, name: str, parent_id: str) -> str:
+        for did, (n, p) in self.doc_meta.items():
+            if n == name and p == parent_id:
+                return did
+        return self.create_doc(name, parent_id)
+
+    def is_live(self, file_id: str) -> bool:
+        return file_id in self.folder_meta or file_id in self.doc_meta
 
     def write_doc(self, doc_id: str, markdown: str) -> None:
         self.docs[doc_id] = markdown
@@ -63,6 +75,8 @@ class FakeGoogleMirror:
     def rename(self, file_id: str, name: str) -> None:
         if file_id in self.folder_meta:
             self.folder_meta[file_id] = (name, self.folder_meta[file_id][1])
+        elif file_id in self.doc_meta:
+            self.doc_meta[file_id] = (name, self.doc_meta[file_id][1])
 
     def move(self, file_id: str, parent_id: str) -> None:
         if file_id in self.folder_meta:
@@ -72,6 +86,11 @@ class FakeGoogleMirror:
         self.docs.pop(file_id, None)
         self.doc_meta.pop(file_id, None)
         self.folder_meta.pop(file_id, None)
+
+    def clear_row(self, tab: str, notion_id: str) -> None:
+        self.tabs[tab] = [
+            r for r in self.tabs[tab] if row_to_record(tab, r).get("_notion_id") != notion_id
+        ]
 
     def read_tab(self, tab: str) -> list[dict[str, Any]]:
         out = []

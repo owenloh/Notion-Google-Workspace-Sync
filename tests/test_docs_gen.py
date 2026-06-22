@@ -1,6 +1,18 @@
 """_Dashboard / _Commands doc generation (pure)."""
 
-from app.engines.docs_gen import CatalogEntry, build_commands_md, build_dashboard_md
+from app.engines.docs_gen import (
+    CatalogEntry,
+    build_commands_md,
+    build_dashboard_md,
+    build_intray_md,
+)
+
+
+def test_intray_md_lists_items_and_handles_empty():
+    md = build_intray_md([{"title": "buy milk", "status": "notStarted"}, {"title": "call Bob"}])
+    assert "Microsoft To-Do" in md
+    assert "- buy milk" in md and "- call Bob" in md
+    assert "in-tray is empty" in build_intray_md([])
 
 ENTRIES = [
     CatalogEntry("area", "Career", "a1"),

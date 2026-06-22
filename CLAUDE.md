@@ -101,11 +101,19 @@ Google Tasks "Notion Commands"      ← Gemini writes one JSON request per task
 Drive: Notion Mirror/               ← read-only reflection (overwritten each sync)
   _Commands  (Doc)   how-to + allowed paths + skill rules + name→Notion-id catalog
   _Dashboard (Doc)   compact Areas/Projects/Actions list with ids (fast voice read)
+  _Intray (Microsoft To-Do) (Doc)   read-only mirror of the MS To-Do in-tray
   Areas/<Area>/<Area>.gdoc          rich body, recursed into nested blocks
             <Project>/<Project>.gdoc   (projects nested under their Area)
               <child subpage>…         recursive subtree of read-only Docs
-  References/  Briefing/
+  References/  Briefing/  Horizons/  Library/
 ```
+
+Folders/Docs are addressed by **ledger id**, not by name: a Notion rename renames
+in place, a move relocates, two same-named items get distinct folders, and a
+deleted/archived Notion page is detected each full reconcile (verified, then the
+Doc/folder is trashed + the row cleared + the pair tombstoned). The root folder +
+index sheet **self-heal** if deleted. Full-sync runs in a background thread
+(`/admin/full-sync` returns immediately; poll `/admin/sync-status`).
 
 Command format (one JSON request in a task's **notes**; see the generated
 `_Commands` Doc for the live schema + ids):
@@ -132,7 +140,9 @@ Command format (one JSON request in a task's **notes**; see the generated
 
 ```
 app/
-  main.py            FastAPI: /health, /admin/full-sync?key=, POST /command?key=, optional webhook
+  main.py            FastAPI: /health, POST /command?key=, optional webhook; admin (key):
+                     full-sync (background)+sync-status, reset-ledger, drive-tree, read-doc,
+                     read-tab, test-command, list-commands
   config.py          Settings (env). Notion roots, relay cfg, cadences, allowlist.
   runtime.py         Process-wide Runtime: NotionSource + GoogleMirror + RelayClient
   core/
@@ -162,10 +172,27 @@ tests/                pytest; in-memory fakes (FakeGoogleMirror/FakeNotionSource
 
 ## Current status
 
+- ✅ **Deployed on Railway and validated end-to-end (2026-06-21).** Full mirror built
+  (14 areas, 26 projects, 44 actions, 419 child pages, Horizons + Library sections).
+  Command write-path verified live through the real Google Tasks inbox: create-pages,
+  update-page (checkbox/properties), insert/update_content on project + subpage bodies,
+  subpage creation under projects + Library — all reflect to Google in ~30s; relay
+  guards + bad-id `✗` receipts confirmed. **92 tests pass, ruff clean.**
+- ✅ Hardening fixed live (each its own commit): Railway `$PORT` (shell-form CMD),
+  spine queried by **database id** not data-source id, background full-sync (HTTP-timeout
+  safe) + `/admin/sync-status`, `/admin/reset-ledger`, self-healing root folder/sheet,
+  per-item isolation, Sheets-429 row cache + Google backoff/retry, **serialized mirror
+  jobs** + 60s HTTP timeout (httplib2 isn't thread-safe), and **Phase 1**: reflect by
+  ledger id (rename/move/dup) + deletion detection (tombstone). MS To-Do in-tray mirror.
+- ⏭️ **Phase 2 (future):** Notion webhook for near-instant hand-edit reflection (manual
+  edits currently ~3 min via `poll_notion`); persist self-healed folder/sheet env ids;
+  `/admin/lookup` (notion_id→drive ids); auth-expiry handling. **Known relay quirk:**
+  `update_properties {"title":…}` on a non-DB subpage *clears* the title instead of
+  renaming — investigate the title format before relying on subpage renames.
 - ✅ Implemented & passing: rich one-way read rendering + recursive fetch; relay
   client + tolerant parser; Google Tasks inbox; command executor + `poll_commands`;
   `_Dashboard`/`_Commands` Docs + Saved Info; synchronous `POST /command`; webhook
-  demoted to optional. **69 tests pass, ruff clean.**
+  demoted to optional.
 - ✅ Validated against the live Alistair API (2026-06-21): fetched `/api/manifest`,
   `skill/notion-master`, `skill/notion-references-tray`, `/openapi.json`, probed reads,
   and ran **one authorized labeled test write** (`create-pages`). Confirmed the body

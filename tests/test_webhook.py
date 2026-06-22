@@ -66,6 +66,31 @@ def test_admin_full_sync_requires_key(monkeypatch):
     get_settings.cache_clear()
 
 
+def test_new_admin_endpoints_require_key(monkeypatch):
+    """The diagnostic/test endpoints are key-gated like the others."""
+    from app.config import get_settings
+    get_settings.cache_clear()  # ADMIN_API_KEY unset -> disabled (503)
+    client = TestClient(app)
+    probes = [
+        ("get", "/admin/sync-status"),
+        ("post", "/admin/reset-ledger"),
+        ("get", "/admin/drive-tree"),
+        ("post", "/admin/test-command"),
+        ("get", "/admin/list-commands"),
+        ("get", "/admin/read-tab?tab=Actions"),
+        ("get", "/admin/read-doc?id=x"),
+    ]
+    for method, path in probes:
+        assert getattr(client, method)(path).status_code == 503, path
+
+    monkeypatch.setenv("ADMIN_API_KEY", "letmein")
+    get_settings.cache_clear()
+    for method, path in probes:
+        sep = "&" if "?" in path else "?"
+        assert getattr(client, method)(f"{path}{sep}key=wrong").status_code == 401, path
+    get_settings.cache_clear()
+
+
 def test_command_requires_key(monkeypatch):
     from app.config import get_settings
     get_settings.cache_clear()  # ADMIN_API_KEY unset -> disabled
