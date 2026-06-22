@@ -36,6 +36,8 @@ def test_commands_doc_has_paths_guardrails_and_points_to_dashboard():
     assert "/api/notion/create-pages" in md
     assert "replace_content" in md                 # warns against it
     assert "FORBIDDEN" in md                        # anti-refusal guardrail present
+    assert "pages" in md and "Common mistakes" in md   # exact-envelope + anti-improvise
+    assert "add_action" in md                       # shows the known wrong shapes
     # The full id catalog is NOT embedded here (kept lean) — it points to _Dashboard.
     assert "_Dashboard" in md
     assert "PourDynamics engine → `p1`" not in md

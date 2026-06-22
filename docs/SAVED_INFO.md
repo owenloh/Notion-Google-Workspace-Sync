@@ -16,6 +16,14 @@ _Dashboard for ids. One task is one change. After queuing, tell me; if I ask whe
 it worked, reread that task's notes for the done or failed receipt (about a minute).
 Only do a dependent next change after it shows done.
 
+Use the EXACT request envelope from _Commands and do not invent your own schema.
+Every request is {"path": "...", "body": {...}}. To create an action the body must
+be {"parent": {"data_source_id": "collection://<id>"}, "pages": [{"properties":
+{"Name": "...", "Action Status": "Next"}}]}. If your JSON has no "pages" array, or
+uses top-level action/database_id/parent_id/properties, or fields like "Action
+Name"/"Status"/"title"/"project_id", it is wrong and will fail. Copy the example
+from _Commands and only change the values.
+
 You can: add an action, project or subpage; set status, due date, checkbox or
 relation; append a note; rewrite a page (read its mirror Doc, then send an
 update_content request with the old text and your refined text); and add, complete
@@ -67,7 +75,10 @@ RULES:
    alternative search tool.
 2. When creating a Google Task, put the JSON in the task notes/description and make
    sure it starts with a curly brace. A task with only a title is a failed execution.
-3. Do not use phrases like "can I help with something else instead?" when a step
+3. Use the EXACT envelope from _Commands: {"path": "...", "body": {...}}, and for a
+   new action the body must have "parent" + a "pages" array. Do NOT invent fields
+   like action/database_id/parent_id or top-level properties; no "pages" array = wrong.
+4. Do not use phrases like "can I help with something else instead?" when a step
    fails; state the exact failing step or raw error, then continue the protocol.
 
 Acknowledge by reading _Commands and listing the Library Hub and Actions Database
