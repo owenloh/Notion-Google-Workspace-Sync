@@ -55,7 +55,10 @@ Do not reintroduce Google→Notion content sync. That was removed on purpose.
   - `POST /api/notion/update-page` — `{"page_id": "<id>", "command":
     "update_properties|insert_content|update_content|replace_content", "properties":
     {...}, "content": "<md>"}`. `update_properties` sets status/due/fields,
-    `insert_content` appends a note. **Never `replace_content`** — body-clobber
+    `insert_content` appends a note (`content`). `update_content` is a targeted
+    search-replace — `{"old_str": "<exact existing text>", "new_str": "<replacement>"}`
+    (empty `new_str` deletes that span; confirmed via `skill/notion-master`). **Never
+    `replace_content`** — body-clobber
     footgun (API guards it with `allow_deleting_content`; the relay additionally
     blocks it unless `force:true`). The relay guard reads the `command` field.
   - Property encoding (**write-tested 2026-06-21**, one labeled test Action): dates →

@@ -208,6 +208,21 @@ def build_commands_md(
         '    "content": "a note appended to the end of the page" } }',
         "```",
         "",
+        "## Example — edit/rewrite text (update-page, targeted search-replace)",
+        "First read the page's mirror Doc and copy the **exact** existing text. "
+        "`update_content` finds `old_str` and replaces it with `new_str` (put the old "
+        "text inside `new_str` to append rather than overwrite; an empty `new_str` "
+        "deletes that span). It will NOT delete nested sub-pages — safe, unlike "
+        "`replace_content`.",
+        "```",
+        '{ "path": "/api/notion/update-page",',
+        '  "body": {',
+        '    "page_id": "<page id>",',
+        '    "command": "update_content",',
+        '    "old_str": "the exact text that already exists on the page",',
+        '    "new_str": "the refined text that replaces it" } }',
+        "```",
+        "",
         "## Microsoft To-Do in-tray (quick capture)",
         "Capture/clear items in your Microsoft To-Do in-tray. To complete or delete,",
         "first read `_Intray (Microsoft To-Do)` for the item, then use its id.",
