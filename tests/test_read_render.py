@@ -139,11 +139,31 @@ def test_child_database_noted_not_expanded():
     assert "Tasks DB" in md and "Database" in md
 
 
-def test_child_page_skipped():
+def test_column_container_children_render():
+    # Layout containers (column_list/column) have no text of their own; their
+    # children must still render (regression: the else-branch used to wipe them).
+    blocks = [{
+        "type": "column_list",
+        "children": [
+            {"type": "column", "children": [_para("inside a column")]},
+            {"type": "column", "children": [
+                {"type": "child_page", "id": "p-9", "child_page": {"title": "Colpage"}},
+            ]},
+        ],
+    }]
+    md = notion_blocks_to_markdown(blocks)
+    assert "inside a column" in md          # column text not dropped
+    assert "Colpage" in md                   # child_page marker inside a column
+
+
+def test_child_page_rendered_as_marker_with_name():
+    # The sub-page is mirrored as its own Doc, but the parent body keeps a named
+    # marker (+ id) so Gemini knows it sits here and can find that Doc.
     blocks = [
         _para("keep me"),
-        {"type": "child_page", "child_page": {"title": "Sub"}},
+        {"type": "child_page", "id": "abc-123", "child_page": {"title": "Sub"}},
     ]
     md = notion_blocks_to_markdown(blocks)
     assert "keep me" in md
-    assert "Sub" not in md
+    assert "Sub" in md          # named so Gemini has context
+    assert "abc-123" in md      # id for cross-referencing the catalog

@@ -191,13 +191,12 @@ _MAX_BLOCK_DEPTH = 6
 def _fetch_block_tree(client: NotionClient, block_id: str, depth: int = 0) -> list[dict]:
     """Fetch a block's children recursively, attaching each block's ``children``.
 
-    Child-page blocks are dropped (separate items). Recursion is depth-limited as
-    a guard against pathological nesting.
+    Child-page blocks are kept (so the renderer can leave a named marker) but never
+    recursed into — they're in ``_NO_RECURSE`` and mirrored as their own Docs.
+    Recursion is depth-limited as a guard against pathological nesting.
     """
     blocks = []
     for block in get_block_children(client, block_id):
-        if block.get("type") == "child_page":
-            continue
         if (
             block.get("has_children")
             and block.get("type") not in _NO_RECURSE

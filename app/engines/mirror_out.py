@@ -151,22 +151,42 @@ class MirrorOut:
         # Depth-1 folders that legitimately exist even when momentarily empty.
         protected = {"Areas", "Pages"} | set(_SECTION_FOLDER.values())
 
-        def visit(node: dict, depth: int) -> None:
+        def visit(node: dict, depth: int) -> bool:
+            """Mark orphans; return True if this node's whole subtree is orphan.
+
+            A depth>=2 folder is trashed only when it isn't tracked AND every
+            descendant is orphan too — so a container that *holds* tracked items
+            (e.g. ``Areas/_Unsorted`` with area-less projects) is never removed.
+            """
             nid = node.get("id")
             kids = node.get("children", []) or []
-            # An obsolete, now-empty section folder (e.g. a de-configured "References")
-            # at depth 1 — trash it so the top level stays a true mirror.
-            if (depth == 1 and node.get("type") == "folder" and not kids
-                    and node.get("name") not in protected):
+            is_folder = node.get("type") == "folder"
+            if depth == 0:
+                for child in kids:
+                    visit(child, 1)
+                return False
+            if depth == 1:
+                # Section/meta level: only sweep an obsolete, empty, unknown section.
+                if is_folder and not kids and node.get("name") not in protected:
+                    victims.append(nid)
+                    return True
+                for child in kids:
+                    visit(child, 2)
+                return False
+            # depth >= 2
+            if not is_folder:
+                if nid not in keep:
+                    victims.append(nid)
+                    return True
+                return False
+            children_orphan = [visit(child, depth + 1) for child in kids]
+            if nid not in keep and all(children_orphan):
                 victims.append(nid)
-                return
-            if depth >= 2 and nid not in keep:
-                victims.append(nid)
-                return  # the whole orphaned subtree goes with it
-            for child in kids:
-                visit(child, depth + 1)
+                return True
+            return False
 
         visit(tree, 0)
+        victims = list(dict.fromkeys(victims))  # dedupe (orphan child + its orphan parent)
         for nid in victims:
             try:
                 self.google.trash(nid)
