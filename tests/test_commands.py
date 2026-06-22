@@ -35,6 +35,25 @@ def test_pending_command_is_forwarded_and_completed(world, session, settings):
     assert google.finished == [("T1", "✓ created")]
 
 
+def test_intray_command_forwarded_and_refreshes_doc(world, session, settings, monkeypatch):
+    notion, google = world
+    google.add_command(
+        '{"path":"/api/intray","body":{"action":"add","title":"Buy milk"}}', task_id="TI"
+    )
+    relay = FakeRelay(RelayResult(ok=True, status=200, summary="added", affected_id=None))
+    monkeypatch.setattr(
+        "app.connectors.relay.fetch_intray", lambda settings=None: [{"title": "Buy milk"}]
+    )
+
+    CommandExecutor(session, notion, google, relay, settings).run_pending()
+
+    assert relay.calls[0].path == "/api/intray"
+    assert google.finished == [("TI", "✓ added")]
+    # The _Intray Doc was (re)generated from the live in-tray, not a Notion page.
+    did = next(d for d, (n, _) in google.doc_meta.items() if n.startswith("_Intray"))
+    assert "Buy milk" in google.read_doc(did)
+
+
 def test_relay_error_yields_cross_receipt(world, session, settings):
     notion, google = world
     google.add_command('{"path":"/api/notion/update-page","body":{}}', task_id="T2")

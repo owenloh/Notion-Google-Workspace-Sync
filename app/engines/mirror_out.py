@@ -155,12 +155,11 @@ class MirrorOut:
 
         Change-gated by content hash so an unchanged catalog isn't rewritten.
         """
-        from app.connectors.relay import fetch_intray, fetch_skill_docs
+        from app.connectors.relay import fetch_skill_docs
         from app.engines.docs_gen import (
             CatalogEntry,
             build_commands_md,
             build_dashboard_md,
-            build_intray_md,
         )
 
         entries = [
@@ -177,9 +176,25 @@ class MirrorOut:
         )
         # Microsoft To-Do in-tray mirror (read-only). Skip on fetch failure so a
         # transient error doesn't clobber the last good copy.
-        intray = fetch_intray(self.settings)
-        if intray is not None:
-            self._write_doc_if_changed("_Intray (Microsoft To-Do)", root, build_intray_md(intray))
+        self.refresh_intray()
+
+    def refresh_intray(self) -> bool:
+        """(Re)generate the `_Intray (Microsoft To-Do)` Doc from the live in-tray.
+
+        Returns True if written, False if the in-tray couldn't be fetched (so a
+        transient error never clobbers the last good copy). Called by the full
+        reconcile and after a successful intray command.
+        """
+        from app.connectors.relay import fetch_intray
+        from app.engines.docs_gen import build_intray_md
+
+        items = fetch_intray(self.settings)
+        if items is None:
+            return False
+        self._write_doc_if_changed(
+            "_Intray (Microsoft To-Do)", self.google.root_folder_id, build_intray_md(items)
+        )
+        return True
 
     def _write_doc_if_changed(self, name: str, parent_id: str, markdown: str) -> None:
         doc_id = self.google.ensure_doc(name, parent_id)
