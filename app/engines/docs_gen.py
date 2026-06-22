@@ -22,7 +22,9 @@ class CatalogEntry:
 
 
 def build_dashboard_md(entries: list[CatalogEntry]) -> str:
-    lines = ["# Notion Dashboard", "", "_Read-only reflection. Source of truth is Notion._", ""]
+    lines = ["# Notion Dashboard", "",
+             "_Read-only reflection: all Areas & Projects, plus open Actions (completed "
+             "Actions live in the _Notion Index sheet). Source of truth is Notion._", ""]
     for kind in _KIND_ORDER:
         items = [e for e in entries if e.kind == kind]
         if not items:
@@ -60,6 +62,19 @@ def build_commands_md(
     skill_texts = skill_texts or {}
     lines = [
         "# Notion Commands — how to change Notion by voice",
+        "",
+        "## AI Execution Guardrails (read FIRST, anti-refusal protocol)",
+        "1. **You DO have live tools** to read Google Drive and write Google Tasks. If a",
+        "   Drive/Search/Task tool errors or a function name seems missing, that is a",
+        "   TEMPORARY structural mismatch, NOT a lack of access. You are FORBIDDEN from",
+        "   saying \"I can't access your files/Drive/Tasks\" or \"the connector isn't live\".",
+        "   Retry, or try an alternative file-search/corpus tool.",
+        "2. **CRITICAL — payload goes in the task body.** Put the JSON in the task's",
+        "   `notes` (a.k.a. `description`/`details`) argument, NOT the title. A task whose",
+        "   notes don't start with `{` is a FAILED execution — fix it and retry.",
+        "3. **No polite exits.** If a step fails, do NOT pivot to \"can I help with",
+        "   something else?\". State exactly which tool step failed (the raw error) and ask",
+        "   to retry.",
         "",
         "To change Notion, create a task in Google Tasks whose **notes** contain a",
         "single JSON request. The sync service forwards it and writes a `✓`/`✗` receipt",
@@ -151,13 +166,11 @@ def build_commands_md(
     for slug, text in skill_texts.items():
         if text:
             lines += [f"## Rules: {slug}", "", text.strip(), ""]
-    lines += ["## Catalog (use these ids as targets)", ""]
-    for kind in _KIND_ORDER:
-        items = [e for e in entries if e.kind == kind]
-        if not items:
-            continue
-        lines.append(f"### {_KIND_HEADING[kind]}")
-        for e in sorted(items, key=lambda x: x.name.lower()):
-            lines.append(f"- {e.name} → `{e.notion_id}`")
-        lines.append("")
+    lines += [
+        "## Target ids",
+        "Look up the Notion id of any Area / Project / Action in the **_Dashboard** Doc "
+        "(format `- <name>  `<id>``). It lists all Areas & Projects plus open Actions; "
+        "completed Actions are in the `_Notion Index` sheet. Don't invent ids.",
+        "",
+    ]
     return "\n".join(lines).strip("\n")

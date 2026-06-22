@@ -196,15 +196,18 @@ class MirrorOut:
             log.info("pruned %d untracked orphan(s)", len(victims))
         return len(victims)
 
-    def _remove_unseen(self, seen: set[str]) -> int:
+    def _remove_unseen(self, seen: set[str], kinds: set[str] | None = None) -> int:
         """Tombstone + trash mirror objects whose Notion page is gone.
 
-        Only runs after a FULL crawl (sync_all), where ``seen`` is every enumerated
-        id. Each candidate is re-fetched first so a partial/failed crawl can't
-        false-delete a page that actually still exists.
+        ``seen`` must be the complete set of live ids for the kinds being checked
+        (every enumerated id for a full crawl, or all live spine ids when ``kinds``
+        is the spine). Each candidate is re-fetched first so a partial/failed crawl
+        can't false-delete a page that actually still exists.
         """
         removed = 0
         for pair in repo.all_pairs(self.session):
+            if kinds is not None and pair.kind not in kinds:
+                continue
             if _norm(pair.notion_id) in seen:
                 continue
             try:
@@ -227,29 +230,42 @@ class MirrorOut:
             log.info("removed mirror for deleted/archived %s (%s)", pair.kind, pair.notion_id)
         return removed
 
+    def reconcile_spine(self) -> int:
+        """Incremental spine pass: regenerate `_Dashboard`/`_Commands` (hash-gated)
+        AND drop spine items deleted/archived in Notion — so the catalog and removals
+        are fresh within a poll cycle, not only at the daily full reconcile.
+
+        Spine-only and cheap (one spine fetch); deep-page deletions still wait for the
+        daily full reconcile. Returns the number of spine items removed.
+        """
+        spine = self.notion.spine_items()  # active spine (the DB query excludes archived)
+        self._write_reference_docs(spine)
+        seen = {_norm(it.notion_id) for it in spine}
+        return self._remove_unseen(seen, kinds={"area", "project", "action"})
+
     def _write_reference_docs(self, spine: list[NotionItem]) -> None:
         """(Re)generate the read-only `_Dashboard` and `_Commands` Docs.
 
         Change-gated by content hash so an unchanged catalog isn't rewritten.
         """
-        from app.connectors.relay import fetch_skill_docs
         from app.engines.docs_gen import (
             CatalogEntry,
             build_commands_md,
             build_dashboard_md,
         )
 
+        # All areas/projects go on the voice surface; only completed actions are
+        # dropped so the Docs don't grow unbounded (full set lives in the index sheet).
         entries = [
             CatalogEntry(kind=it.kind, name=it.title, notion_id=it.notion_id)
             for it in spine
-            if it.kind in {"area", "project", "action"}
+            if it.kind in {"area", "project", "action"} and _is_active(it)
         ]
         root = self.google.root_folder_id
-        skills = fetch_skill_docs(self.settings)
         self._write_doc_if_changed("_Dashboard", root, build_dashboard_md(entries))
         self._write_doc_if_changed(
             "_Commands", root,
-            build_commands_md(entries, self.settings.allowed_relay_paths, skills),
+            build_commands_md(entries, self.settings.allowed_relay_paths),
         )
         # Microsoft To-Do in-tray mirror (read-only). Skip on fetch failure so a
         # transient error doesn't clobber the last good copy.
@@ -502,3 +518,16 @@ _SECTION_FOLDER = {
 
 def _norm(notion_id: str | None) -> str:
     return (notion_id or "").replace("-", "")
+
+
+def _is_active(item: NotionItem) -> bool:
+    """Whether an item belongs on the voice surface (_Dashboard/_Commands).
+
+    All Areas and Projects are kept. Only **completed Actions** are dropped — those
+    marked Done or with the checkbox ticked — to bound growth as actions pile up
+    (they still live in the _Notion Index sheet).
+    """
+    if item.kind == "action":
+        props = item.properties or {}
+        return (props.get("Action Status") or "") != "Done" and not props.get("Checkbox")
+    return True

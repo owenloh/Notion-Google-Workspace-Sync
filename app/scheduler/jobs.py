@@ -64,6 +64,13 @@ def poll_incremental(rt: Runtime | None = None) -> int:
                     done += 1
                 except Exception:  # noqa: BLE001 — per-item isolation
                     log.exception("incremental reflect failed for %s", it.notion_id)
+            # Keep the catalog fresh AND catch spine deletions/archives every cycle
+            # (cheap, one spine fetch) so Gemini sees current ids/status within ~a
+            # poll, not only at the daily reconcile.
+            try:
+                engine.reconcile_spine()
+            except Exception:  # noqa: BLE001 — best-effort
+                log.exception("spine reconcile in poll_incremental failed")
             try:
                 engine.refresh_intray()
             except Exception:  # noqa: BLE001 — best-effort

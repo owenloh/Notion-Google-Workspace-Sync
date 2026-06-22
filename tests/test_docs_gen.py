@@ -28,18 +28,20 @@ def test_dashboard_lists_each_kind_with_ids():
     assert "PourDynamics engine  `p1`" in md
 
 
-def test_commands_doc_has_paths_catalog_and_skill_rules():
+def test_commands_doc_has_paths_guardrails_and_points_to_dashboard():
     md = build_commands_md(
         ENTRIES,
         allowed_paths=["/api/notion/create-pages", "/api/notion/update-page"],
-        skill_texts={"notion-master": "STATUS values: Next/Waiting/Done"},
     )
     assert "/api/notion/create-pages" in md
-    assert "PourDynamics engine → `p1`" in md
-    assert "STATUS values" in md
-    assert "replace_content" in md  # warns against it
+    assert "replace_content" in md                 # warns against it
+    assert "FORBIDDEN" in md                        # anti-refusal guardrail present
+    # The full id catalog is NOT embedded here (kept lean) — it points to _Dashboard.
+    assert "_Dashboard" in md
+    assert "PourDynamics engine → `p1`" not in md
 
 
-def test_commands_doc_without_skills_still_valid():
+def test_commands_doc_lean_without_skill_dump():
+    # Even if skill text is supplied it stays optional; the doc is valid without it.
     md = build_commands_md(ENTRIES, allowed_paths=["/api/notion/create-pages"])
-    assert "Catalog" in md and "Email Bob → `t1`" in md
+    assert "Target ids" in md and "_Dashboard" in md

@@ -22,8 +22,8 @@ WRITES  Gemini voice ▶ Google Task (JSON) ▶ this relay ▶ Alistair API ▶ 
 | --- | --- | --- | --- |
 | `poll_commands` | ~30 s | run command tasks across **all** Tasks lists (JSON-only) → relay → receipt → re-reflect the affected page | shared (skips if busy) |
 | per-command re-reflect | instant | re-mirror just the page a command changed (any depth); intray cmd → refresh `_Intray` | within above |
-| `poll_incremental` | ~2 min | Notion `/search` by `last_edited_time` → reflect **every changed page incl. deep sub-pages** | shared (skips if busy) |
-| `full_reconcile` | **daily 04:00 (Europe/London)** | backstop only: **deletions**, orphan/section **prune**, drift heal, regen `_Dashboard`/`_Commands`/`_Intray` | held for its whole (~minutes) run |
+| `poll_incremental` | ~2 min | Notion `/search` by `last_edited_time` → reflect **every changed page incl. deep sub-pages**; also regenerates `_Dashboard`/`_Commands` + sweeps **spine** deletions/archives | shared (skips if busy) |
+| `full_reconcile` | **daily 04:00 (Europe/London)** | backstop only: **deep-page deletions**, orphan/section **prune**, drift heal, regen all Docs | held for its whole (~minutes) run |
 | Notion webhook | optional (off) | near-instant hand-edit reflection | — |
 
 **Latency cheat-sheet:** voice change ≈ 30–60 s · manual edit/rename/move (any depth)

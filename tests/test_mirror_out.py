@@ -242,6 +242,60 @@ def test_prune_removes_untracked_orphans(session, settings, world):
     assert google.is_live(proj.drive_folder_id)        # tracked project kept
 
 
+def test_reconcile_spine_regenerates_dashboard(session, settings, world):
+    """The incremental path refreshes the catalog without a full reconcile."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).reconcile_spine()
+    dash = next(google.docs[d] for d, (n, _) in google.doc_meta.items() if n == "_Dashboard")
+    assert "Career" in dash and "`a1`" in dash      # spine listed with ids
+
+
+def test_reconcile_spine_removes_deleted_spine_item(session, settings, world):
+    """A spine item gone from Notion is dropped by the incremental spine pass
+    (no waiting for the daily reconcile)."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).sync_all()
+    proj = repo.get_pair_by_notion_id(session, "p1")
+    folder = proj.drive_folder_id
+    assert google.is_live(folder)
+
+    # Project deleted in Notion: gone from the spine query AND get_item.
+    notion.spine_ids = ["a1", "t1"]
+    del notion.items["p1"]
+
+    removed = MirrorOut(session, notion, google, settings).reconcile_spine()
+    assert removed >= 1
+    assert not google.is_live(folder)                       # mirror dropped ~a poll later
+    assert repo.get_pair_by_notion_id(session, "p1").tombstone is True
+
+
+def test_dashboard_keeps_areas_projects_drops_done_actions(session, settings):
+    """_Dashboard lists all Areas/Projects but omits Done / checkboxed Actions."""
+    area = make_item("a1", "area", "Retired Area",
+                     properties={"Name": "Retired Area", "Status": "Retired"})
+    proj = make_item("p1", "project", "Done Project",
+                     properties={"Project": "Done Project", "Status": "Complete"},
+                     relations={"Area": ["a1"]})
+    open_act = make_item("t1", "action", "Open task",
+                         properties={"Name": "Open task", "Action Status": "Next",
+                                     "Checkbox": False}, relations={})
+    done_act = make_item("t2", "action", "Done task",
+                         properties={"Name": "Done task", "Action Status": "Done"}, relations={})
+    ticked_act = make_item("t3", "action", "Ticked task",
+                           properties={"Name": "Ticked task", "Action Status": "Next",
+                                       "Checkbox": True}, relations={})
+    items = {"a1": area, "p1": proj, "t1": open_act, "t2": done_act, "t3": ticked_act}
+    notion = FakeNotionSource(items, {k: "" for k in items}, {},
+                              spine_ids=["a1", "p1", "t1", "t2", "t3"], loose_ids=[])
+    google = FakeGoogleMirror()
+    MirrorOut(session, notion, google, settings).sync_all()
+
+    dash = next(google.docs[d] for d, (n, _) in google.doc_meta.items() if n == "_Dashboard")
+    assert "Retired Area" in dash and "Done Project" in dash   # areas/projects always kept
+    assert "Open task" in dash                                  # open action kept
+    assert "Done task" not in dash and "Ticked task" not in dash  # completed dropped
+
+
 def test_prune_keeps_unsorted_container_holding_tracked_projects(session, settings):
     """A non-ledger container folder (Areas/_Unsorted) that holds tracked items
     must NOT be pruned, even though it has no pair of its own."""
