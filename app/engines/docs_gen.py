@@ -22,7 +22,9 @@ class CatalogEntry:
 
 
 def build_dashboard_md(entries: list[CatalogEntry]) -> str:
-    lines = ["# Notion Dashboard", "", "_Read-only reflection. Source of truth is Notion._", ""]
+    lines = ["# Notion Dashboard", "",
+             "_Read-only reflection of **active** items (completed/archived live in the "
+             "_Notion Index sheet). Source of truth is Notion._", ""]
     for kind in _KIND_ORDER:
         items = [e for e in entries if e.kind == kind]
         if not items:
@@ -164,13 +166,11 @@ def build_commands_md(
     for slug, text in skill_texts.items():
         if text:
             lines += [f"## Rules: {slug}", "", text.strip(), ""]
-    lines += ["## Catalog (use these ids as targets)", ""]
-    for kind in _KIND_ORDER:
-        items = [e for e in entries if e.kind == kind]
-        if not items:
-            continue
-        lines.append(f"### {_KIND_HEADING[kind]}")
-        for e in sorted(items, key=lambda x: x.name.lower()):
-            lines.append(f"- {e.name} → `{e.notion_id}`")
-        lines.append("")
+    lines += [
+        "## Target ids",
+        "Look up the Notion id of any Area / Project / Action in the **_Dashboard** Doc "
+        "(format `- <name>  `<id>``). It lists **active** items only; completed/archived "
+        "items are in the `_Notion Index` sheet. Don't invent ids.",
+        "",
+    ]
     return "\n".join(lines).strip("\n")

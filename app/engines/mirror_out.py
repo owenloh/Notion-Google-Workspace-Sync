@@ -232,24 +232,24 @@ class MirrorOut:
 
         Change-gated by content hash so an unchanged catalog isn't rewritten.
         """
-        from app.connectors.relay import fetch_skill_docs
         from app.engines.docs_gen import (
             CatalogEntry,
             build_commands_md,
             build_dashboard_md,
         )
 
+        # Only ACTIVE items go on the voice surface, so the Docs stay lean and don't
+        # grow unbounded with completed actions; the full set lives in the index sheet.
         entries = [
             CatalogEntry(kind=it.kind, name=it.title, notion_id=it.notion_id)
             for it in spine
-            if it.kind in {"area", "project", "action"}
+            if it.kind in {"area", "project", "action"} and _is_active(it)
         ]
         root = self.google.root_folder_id
-        skills = fetch_skill_docs(self.settings)
         self._write_doc_if_changed("_Dashboard", root, build_dashboard_md(entries))
         self._write_doc_if_changed(
             "_Commands", root,
-            build_commands_md(entries, self.settings.allowed_relay_paths, skills),
+            build_commands_md(entries, self.settings.allowed_relay_paths),
         )
         # Microsoft To-Do in-tray mirror (read-only). Skip on fetch failure so a
         # transient error doesn't clobber the last good copy.
@@ -502,3 +502,20 @@ _SECTION_FOLDER = {
 
 def _norm(notion_id: str | None) -> str:
     return (notion_id or "").replace("-", "")
+
+
+def _is_active(item: NotionItem) -> bool:
+    """Whether an item belongs on the voice surface (_Dashboard/_Commands).
+
+    Completed/archived items are excluded to keep the Docs lean (they still live in
+    the _Notion Index sheet): Actions that are Done, Projects Complete/Dropped, Areas
+    Retired.
+    """
+    props = item.properties or {}
+    if item.kind == "action":
+        return (props.get("Action Status") or "") != "Done"
+    if item.kind == "project":
+        return (props.get("Status") or "") not in {"Complete", "Dropped"}
+    if item.kind == "area":
+        return (props.get("Status") or "") != "Retired"
+    return True
