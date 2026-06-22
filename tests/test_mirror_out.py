@@ -89,22 +89,21 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
 def test_loose_pages_mirror_body_only(session, settings):
     """Loose pages get a body Doc in their section folder, no sheet row (no KeyError)."""
     brief = make_item("b1", "briefing", "Alistair's Brief", properties={}, relations={})
-    refs = make_item("r1", "reference", "Unorganised References", properties={}, relations={})
     horizons = make_item("h1", "horizons", "Horizons (drafting)", properties={}, relations={})
     library = make_item("l1", "library", "Library", properties={}, relations={})
-    items = {"b1": brief, "r1": refs, "h1": horizons, "l1": library}
-    bodies = {"b1": "today's brief", "r1": "a saved link", "h1": "my vision", "l1": "reading list"}
-    notion = FakeNotionSource(items, bodies, {}, spine_ids=[], loose_ids=["b1", "r1", "h1", "l1"])
+    items = {"b1": brief, "h1": horizons, "l1": library}
+    bodies = {"b1": "today's brief", "h1": "my vision", "l1": "reading list"}
+    notion = FakeNotionSource(items, bodies, {}, spine_ids=[], loose_ids=["b1", "h1", "l1"])
     google = FakeGoogleMirror()
 
     counts = MirrorOut(session, notion, google, settings).sync_all()
 
     assert counts["failed"] == 0
-    for text in ("today's brief", "a saved link", "my vision", "reading list"):
+    for text in ("today's brief", "my vision", "reading list"):
         assert any(text in v for v in google.docs.values())
     # Each loose page lands in its own section folder.
     names = {meta[0] for meta in google.folder_meta.values()}
-    assert {"Briefing", "References", "Horizons", "Library"} <= names
+    assert {"Briefing", "Horizons", "Library"} <= names
     # No spine sheet rows were written for loose pages.
     assert google.read_tab("Areas") == []
     assert google.read_tab("Actions") == []
@@ -241,6 +240,20 @@ def test_prune_removes_untracked_orphans(session, settings, world):
     assert pruned >= 1
     assert not google.is_live(orphan)                  # orphan trashed
     assert google.is_live(proj.drive_folder_id)        # tracked project kept
+
+
+def test_prune_sweeps_obsolete_empty_section_folder(session, settings, world):
+    """An empty, de-configured top-level section (e.g. old References) is removed;
+    current sections and meta are left alone."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).sync_all()
+    root = google.root_folder_id
+    obsolete = google.create_folder("References", root)   # empty, not a current section
+    keep_empty = google.create_folder("Briefing", root)   # current section, empty here
+
+    MirrorOut(session, notion, google, settings)._prune_untracked()
+    assert not google.is_live(obsolete)                   # obsolete empty section swept
+    assert google.is_live(keep_empty)                     # current section preserved
 
 
 def test_mirror_is_idempotent(session, settings, world):

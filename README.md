@@ -133,6 +133,11 @@ Then paste `docs/SAVED_INFO.md` into Gemini → Settings → **Saved info**.
 > `collection://2ebc58c5-8617-4748-8021-fcc2a37d3a97`. The generated `_Commands` Doc
 > embeds these plus the live name↔id catalog.
 
+> 📖 **`docs/HOW_IT_WORKS.md`** is the dense, glanceable reference for the whole
+> system — flow direction & timing, the exact Drive structure + placement rules,
+> identity/self-healing, and every limitation (e.g. actions have no body mirrored).
+> Read that for the nitty-gritty; the Operating Guide below is the quick version.
+
 ---
 
 # Operating guide — what works, how long it takes, what it can't do
