@@ -85,7 +85,8 @@ class Settings(BaseSettings):
     # Comma-separated allowlist of API paths the relay may call. Anything else is
     # rejected, so a command task can never reach github/push-file or deletes.
     relay_allowed_paths: str = (
-        "/api/notion/create-pages,/api/notion/update-page,/api/notion/create-comment"
+        "/api/notion/create-pages,/api/notion/update-page,/api/notion/create-comment,"
+        "/api/intray"
     )
     # Google Tasks list that serves as the command inbox.
     command_tasklist_name: str = "Notion Commands"

@@ -126,6 +126,15 @@ def build_commands_md(
         '    "content": "a note appended to the end of the page" } }',
         "```",
         "",
+        "## Microsoft To-Do in-tray (quick capture)",
+        "Capture/clear items in your Microsoft To-Do in-tray. To complete or delete,",
+        "first read `_Intray (Microsoft To-Do)` for the item, then use its id.",
+        "```",
+        '{ "path": "/api/intray", "body": { "action": "add", "title": "Buy oat milk" } }',
+        '{ "path": "/api/intray", "body": { "action": "done",   "task_id": "<id>" } }',
+        '{ "path": "/api/intray", "body": { "action": "delete", "task_id": "<id>" } }',
+        "```",
+        "",
     ]
     for slug, text in skill_texts.items():
         if text:

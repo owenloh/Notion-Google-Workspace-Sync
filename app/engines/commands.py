@@ -37,10 +37,13 @@ class CommandExecutor:
         self.settings = settings or get_settings()
 
     def execute_one(self, req: RelayRequest) -> RelayResult:
-        """Forward one request and re-reflect the affected page on success."""
+        """Forward one request and re-reflect the affected surface on success."""
         result = self.relay.execute(req)
-        if result.ok and result.affected_id:
-            self._reflect(result.affected_id)
+        if result.ok:
+            if req.path == "/api/intray":
+                self._refresh_intray()  # MS To-Do command → refresh the _Intray Doc
+            elif result.affected_id:
+                self._reflect(result.affected_id)
         return result
 
     def run_pending(self) -> int:
@@ -69,3 +72,12 @@ class CommandExecutor:
             MirrorOut(self.session, self.notion, self.google, self.settings).mirror_item(item)
         except Exception:  # noqa: BLE001 — reflection is best-effort; poll will catch up
             log.exception("re-reflect failed for %s", page_id)
+
+    def _refresh_intray(self) -> None:
+        """Regenerate the `_Intray` Doc after a MS To-Do command (best-effort)."""
+        from app.engines.mirror_out import MirrorOut
+
+        try:
+            MirrorOut(self.session, self.notion, self.google, self.settings).refresh_intray()
+        except Exception:  # noqa: BLE001 — reflection is best-effort; poll will catch up
+            log.exception("intray re-reflect failed")
