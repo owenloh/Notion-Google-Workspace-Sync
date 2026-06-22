@@ -33,6 +33,9 @@ class FakeGoogleMirror:
     def ensure_index_structure(self) -> None:
         self.structure_ready = True
 
+    def ensure_root(self) -> str:
+        return self.root_folder_id
+
     def ensure_folder(self, name: str, parent_id: str) -> str:
         key = (parent_id, name)
         if key not in self.folders:
