@@ -261,7 +261,9 @@ class MirrorOut:
             for it in spine
             if it.kind in {"area", "project", "action"} and _is_active(it)
         ]
-        root = self.google.root_folder_id
+        # Resolve a *live* root: if the configured folder was trashed, self-heal to
+        # the "Notion Mirror" folder so meta docs never get written into the trash.
+        root = self.google.ensure_root()
         self._write_doc_if_changed("_Dashboard", root, build_dashboard_md(entries))
         self._write_doc_if_changed(
             "_Commands", root,
@@ -285,13 +287,18 @@ class MirrorOut:
         if items is None:
             return False
         self._write_doc_if_changed(
-            "_Intray (Microsoft To-Do)", self.google.root_folder_id, build_intray_md(items)
+            "_Intray (Microsoft To-Do)", self.google.ensure_root(), build_intray_md(items)
         )
         return True
 
     def _write_doc_if_changed(self, name: str, parent_id: str, markdown: str) -> None:
         doc_id = self.google.ensure_doc(name, parent_id)
-        key = f"doc_hash:{name}"
+        # Key the gate by the *doc id*, not the name: if the target doc changes
+        # (root folder re-pointed, or self-healed to a new "Notion Mirror"), the
+        # name-keyed hash would still "match" and silently suppress the write into
+        # the new doc, freezing it forever. Keying by id forces a write whenever
+        # the target changes, while staying idempotent for a stable doc.
+        key = f"doc_hash:{doc_id}"
         new_hash = body_hash(markdown)
         if repo.get_state(self.session, key) == new_hash:
             return
