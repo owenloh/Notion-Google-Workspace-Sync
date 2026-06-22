@@ -1,9 +1,10 @@
 """Generate the read-only `_Dashboard` and `_Commands` Docs (pure builders).
 
-`_Dashboard` is a compact, voice-readable list of the spine with Notion ids.
-`_Commands` teaches Gemini how to issue a write: the allowed endpoints, the relay
-request shape, the (optional) `skill/*` rules fetched from the Alistair API, and
-the same name↔id catalog so it can target real items.
+`_Dashboard` is a compact, voice-readable list of the spine with Notion ids (all
+Areas/Projects + open Actions). `_Commands` teaches Gemini how to issue a write:
+the AI execution guardrails, the allowed endpoints, the exact request envelope +
+examples, and the property encoding. It stays lean — target ids are looked up in
+`_Dashboard`, not duplicated here.
 """
 
 from __future__ import annotations
