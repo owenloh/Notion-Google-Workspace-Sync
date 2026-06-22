@@ -55,6 +55,21 @@ class NotionSource:
     def get_item(self, page_id: str) -> NotionItem:
         return nread.get_page(self.client, page_id)
 
+    def changed_since(self, watermark: str) -> list[NotionItem]:
+        """All pages edited since ``watermark`` (newest-first), incl. deep sub-pages.
+
+        Spine pages are reclassified by their database so they mirror as rows;
+        loose roots keep their configured kind. Everything else stays a "page".
+        """
+        items = nread.search_pages_changed_since(self.client, watermark)
+        for it in items:
+            loose = LOOSE_PAGES.get(it.notion_id) or LOOSE_PAGES.get(
+                it.notion_id.replace("-", "")
+            )
+            if loose:
+                it.kind = loose
+        return items
+
     # --- writes (mirror_in) ---
     def create_page(
         self, parent: dict, properties: dict, children: list[dict] | None = None

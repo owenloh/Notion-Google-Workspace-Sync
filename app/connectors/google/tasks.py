@@ -36,6 +36,76 @@ def resolve_command_list(tasks, name: str) -> str:
     return created["id"]
 
 
+def list_tasklists(tasks) -> list[dict]:
+    """All of the user's task lists ([{id, title}, ...])."""
+    return _exec(tasks.tasklists().list(maxResults=100)).get("items", [])
+
+
+def _is_command_shaped(task: dict) -> bool:
+    return command_text(task).lstrip().startswith(("{", "["))
+
+
+def pending_commands_all(tasks) -> list[dict]:
+    """Pending command tasks across EVERY task list.
+
+    Gemini Live can't reliably target a named list and may write to any list, so we
+    scan them all. Only JSON-shaped tasks (notes/title starting with ``{``/``[``)
+    are treated as commands, so personal tasks are never picked up, completed, or
+    receipted. Each task carries ``_tasklist`` so its receipt is written back to the
+    list it lives in.
+    """
+    out: list[dict] = []
+    for tl in list_tasklists(tasks):
+        tid = tl.get("id")
+        for task in list_pending(tasks, tid):
+            if not _is_command_shaped(task):
+                continue
+            task["_tasklist"] = tid
+            out.append(task)
+    return out
+
+
+def tasklists_overview(tasks) -> list[dict]:
+    """Diagnostic: every list with its pending tasks (unfiltered) — shows exactly
+    where commands are landing and whether they're JSON-shaped."""
+    out: list[dict] = []
+    for tl in list_tasklists(tasks):
+        resp = _exec(
+            tasks.tasks().list(tasklist=tl["id"], showCompleted=False, maxResults=100)
+        )
+        brief = [
+            {
+                "title": (t.get("title") or "")[:60],
+                "notes": (t.get("notes") or "")[:120],
+                "command_shaped": _is_command_shaped(t),
+            }
+            for t in resp.get("items", [])
+        ]
+        out.append(
+            {"list": tl.get("title"), "id": tl.get("id"), "pending": len(brief), "tasks": brief}
+        )
+    return out
+
+
+def all_command_tasks(tasks) -> list[dict]:
+    """Diagnostic: command-shaped or already-receipted tasks across all lists,
+    including completed (so receipts are visible). Each tagged with its list."""
+    out: list[dict] = []
+    for tl in list_tasklists(tasks):
+        resp = _exec(
+            tasks.tasks().list(
+                tasklist=tl["id"], showCompleted=True, showHidden=True, maxResults=100
+            )
+        )
+        for task in resp.get("items", []):
+            notes = task.get("notes") or ""
+            if _is_command_shaped(task) or notes.lstrip().startswith(_RECEIPT_MARKERS):
+                task["_tasklist"] = tl["id"]
+                task["_tasklist_title"] = tl.get("title")
+                out.append(task)
+    return out
+
+
 def create_task(tasks, tasklist_id: str, title: str, notes: str) -> dict:
     """Insert a task into the list (used to test the command inbox path)."""
     return _exec(tasks.tasks().insert(tasklist=tasklist_id, body={"title": title, "notes": notes}))
@@ -51,13 +121,8 @@ def list_all(tasks, tasklist_id: str) -> list[dict]:
     return resp.get("items", [])
 
 
-def list_pending(tasks, tasklist_id: str, commands_only: bool = False) -> list[dict]:
-    """Return tasks that are not completed and not already receipted.
-
-    With ``commands_only`` (used on the shared default list), only JSON-shaped
-    tasks (notes/title starting with ``{`` or ``[``) are returned, so personal
-    tasks sharing the list are never picked up, completed, or receipted.
-    """
+def list_pending(tasks, tasklist_id: str) -> list[dict]:
+    """Return tasks in a list that are not completed and not already receipted."""
     resp = _exec(
         tasks.tasks().list(
             tasklist=tasklist_id, showCompleted=False, showHidden=False, maxResults=100
@@ -70,8 +135,6 @@ def list_pending(tasks, tasklist_id: str, commands_only: bool = False) -> list[d
         notes = task.get("notes") or ""
         if notes.lstrip().startswith(_RECEIPT_MARKERS):
             continue  # already processed, awaiting completion propagation
-        if commands_only and not command_text(task).lstrip().startswith(("{", "[")):
-            continue  # a personal (non-command) task on the shared list — leave it alone
         out.append(task)
     return out
 

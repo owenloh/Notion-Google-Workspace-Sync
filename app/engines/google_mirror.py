@@ -212,18 +212,22 @@ class GoogleMirror:
         return self._command_list_id
 
     def pending_commands(self) -> list[dict]:
-        # On the shared default list, only JSON-shaped tasks count as commands so
-        # personal tasks are never picked up; a dedicated list stays permissive.
-        commands_only = self.command_list_id() == gtasks.DEFAULT_TASKLIST
-        return gtasks.list_pending(
-            self.services.tasks, self.command_list_id(), commands_only=commands_only
-        )
+        # Scan ALL task lists: Gemini Live can't reliably target a named list, so a
+        # command may land in any list. Only JSON-shaped tasks are treated as
+        # commands, so personal tasks are never touched.
+        return gtasks.pending_commands_all(self.services.tasks)
 
     def create_command(self, title: str, notes: str) -> dict:
         return gtasks.create_task(self.services.tasks, self.command_list_id(), title, notes)
 
     def list_commands(self) -> list[dict]:
-        return gtasks.list_all(self.services.tasks, self.command_list_id())
+        # Diagnostic: command-shaped/receipted tasks across all lists, incl completed.
+        return gtasks.all_command_tasks(self.services.tasks)
+
+    def tasklists_overview(self) -> list[dict]:
+        return gtasks.tasklists_overview(self.services.tasks)
 
     def finish_command(self, task: dict, receipt: str) -> None:
-        gtasks.complete_with_receipt(self.services.tasks, self.command_list_id(), task, receipt)
+        # Write the receipt back to whichever list the task actually lives in.
+        tid = task.get("_tasklist") or self.command_list_id()
+        gtasks.complete_with_receipt(self.services.tasks, tid, task, receipt)

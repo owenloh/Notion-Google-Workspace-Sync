@@ -130,9 +130,9 @@ Command format (one JSON request in a task's **notes**; see the generated
 
 | Layer | Cadence | Purpose |
 | --- | --- | --- |
-| `poll_commands` | ~30 s | run pending command tasks (Tasks has no push) |
-| `poll_notion` | ~3 min | mirror spine + loose pages changed by `last_edited_time` |
-| `full_reconcile` | ~30 min | recurse all child pages, heal drift, regenerate Docs |
+| `poll_commands` | ~30 s | run pending command tasks across **all** Tasks lists (JSON-only) |
+| `poll_incremental` | ~2 min | reflect every page changed since watermark (deep sub-pages incl.) via `/search` by `last_edited_time` — replaced the old shallow `poll_notion` |
+| `full_reconcile` | ~6 h | backstop only: deletions, orphan prune, drift heal, regen Docs (holds the mirror lock for minutes, so kept infrequent) |
 | per-command re-reflect | instant | refresh the page a command just changed |
 | Notion webhook | optional (off) | near-instant reflection of hand edits |
 
