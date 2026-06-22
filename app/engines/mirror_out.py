@@ -148,13 +148,22 @@ class MirrorOut:
             log.exception("prune: could not read drive tree; skipping")
             return 0
         victims: list[str] = []
+        # Depth-1 folders that legitimately exist even when momentarily empty.
+        protected = {"Areas", "Pages"} | set(_SECTION_FOLDER.values())
 
         def visit(node: dict, depth: int) -> None:
             nid = node.get("id")
+            kids = node.get("children", []) or []
+            # An obsolete, now-empty section folder (e.g. a de-configured "References")
+            # at depth 1 — trash it so the top level stays a true mirror.
+            if (depth == 1 and node.get("type") == "folder" and not kids
+                    and node.get("name") not in protected):
+                victims.append(nid)
+                return
             if depth >= 2 and nid not in keep:
                 victims.append(nid)
                 return  # the whole orphaned subtree goes with it
-            for child in node.get("children", []) or []:
+            for child in kids:
                 visit(child, depth + 1)
 
         visit(tree, 0)
@@ -464,9 +473,10 @@ _TAB = {"area": "Areas", "project": "Projects", "action": "Actions"}
 # Loose-page kinds → their top-level section folder under the mirror root.
 _SECTION_FOLDER = {
     "briefing": "Briefing",
-    "reference": "References",
     "horizons": "Horizons",
     "library": "Library",
+    # "reference" removed: "Unorganised References" now mirrors under Library
+    # (not as a top-level section), so no item maps to a "References" section.
 }
 
 

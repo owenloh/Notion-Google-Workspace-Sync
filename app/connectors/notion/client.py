@@ -35,7 +35,8 @@ class NotionClient:
         self._client.close()
 
     def request(
-        self, method: str, path: str, *, json: dict | None = None, version: str | None = None
+        self, method: str, path: str, *, json: dict | None = None,
+        params: dict | None = None, version: str | None = None,
     ) -> dict[str, Any]:
         """Issue a request with retry on 429 / 5xx and transient transport/SSL errors.
 
@@ -47,7 +48,8 @@ class NotionClient:
         last_exc: httpx.TransportError | None = None
         for _attempt in range(5):
             try:
-                resp = self._client.request(method, path, json=json, headers=headers)
+                resp = self._client.request(method, path, json=json, params=params,
+                                            headers=headers)
             except httpx.TransportError as exc:  # connect/read/SSL blips
                 last_exc = exc
                 log.warning(
@@ -75,11 +77,26 @@ class NotionClient:
     def paginate(
         self, method: str, path: str, *, json: dict | None = None, version: str | None = None
     ) -> Iterator[dict]:
-        """Yield every result across paginated endpoints (start_cursor)."""
-        payload = dict(json or {})
+        """Yield every result across paginated endpoints.
+
+        Pagination differs by verb: GET endpoints (e.g. ``/blocks/{id}/children``)
+        take ``start_cursor`` as a **query param** — sending it in the body is a 400
+        ("body.start_cursor should be not present") — while POST endpoints
+        (``/search``, ``/databases/{id}/query``) take it in the **body**.
+        """
+        is_get = method.upper() == "GET"
+        base_body = dict(json or {})
+        cursor: str | None = None
         while True:
-            data = self.request(method, path, json=payload, version=version)
+            if is_get:
+                params = {"start_cursor": cursor} if cursor else None
+                data = self.request(method, path, params=params, version=version)
+            else:
+                body = dict(base_body)
+                if cursor:
+                    body["start_cursor"] = cursor
+                data = self.request(method, path, json=body, version=version)
             yield from data.get("results", [])
             if not data.get("has_more"):
                 break
-            payload["start_cursor"] = data.get("next_cursor")
+            cursor = data.get("next_cursor")
