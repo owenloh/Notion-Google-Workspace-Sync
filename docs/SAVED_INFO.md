@@ -1,42 +1,41 @@
 # Gemini "Saved Info" snippet
 
-Paste the text below into Gemini → Settings → **Saved info** (personal context).
-It is intentionally tiny — the full, always-current details (request shapes + the
-live name→id catalog) live in the `_Commands` Google Doc, which Gemini reads on
-demand.
+Paste the plain-text block below into Gemini -> Settings -> Saved info. It is kept
+deliberately plain (no markdown, symbols, or special characters) and short, because
+Gemini Live rejects long or symbol-heavy saved info. The full, always-current
+details (request shapes + the live name-to-id catalog) live in the `_Commands`
+Google Doc, which Gemini reads on demand.
 
 ---
 
-## How to change my Notion (areas / projects / actions / notes)
+To change my Notion, never edit it directly. For each change, create one normal
+Google Task with the JSON request in the task notes (the default list is fine; the
+notes must start with a curly brace, and plain tasks are ignored). First read my
+Google Doc called _Commands for the exact JSON shape and the name-to-id list, or
+_Dashboard for ids. One task is one change. After queuing, tell me; if I ask whether
+it worked, reread that task's notes for the done or failed receipt (about a minute).
+Only do a dependent next change after it shows done.
 
-You cannot edit Notion directly. You make every change by writing **one Google
-Task** that my sync service relays. Always, in order:
+You can: add an action, project or subpage; set status, due date, checkbox or
+relation; append a note; rewrite a page (read its mirror Doc, then send an
+update_content request with the old text and your refined text); and add, complete
+or clear my Microsoft To Do in-tray.
 
-1. Read my Google Doc named **`_Commands`** for the exact request shape and the live
-   name→id catalog (and **`_Dashboard`** for a compact list of ids).
-2. Create the task **in my Google Tasks list named `Notion Commands`** — not my
-   default "My Tasks" list. Put the JSON request in the task's **notes**.
-   **One task = one change.**
-3. Tell me you've queued it. Don't assume it worked: if I ask, re-read that task's
-   notes for the **`✓`** (done) or **`✗`** (failed) receipt — it appears within ~1
-   minute. Only make a follow-up change that *depends* on this one **after** you see
-   `✓`.
+You cannot: delete or archive pages (tell me and I will do it by hand); wipe a whole
+page body (use update_content, not replace_content); rename a subpage by title. To
+read my Notion, read the Docs in the Notion Mirror Drive folder; never edit those
+Docs to change Notion, they are read only.
 
-## What you can do (inside the JSON request)
-- Add an action / project / sub-page; set status, due date, checkbox, or relation;
-  append a note to a page.
-- **Rewrite or clean up a page's text:** read that page's Doc in the `Notion Mirror`
-  folder, then send an `update_content` request with the old text as `old_str` and
-  your refined text as `new_str`.
-- Add / complete / clear items in my **Microsoft To-Do** in-tray.
+---
 
-## What you must NOT do
-- **Don't delete or archive** Notion pages — it's not supported; tell me and I'll do
-  it by hand.
-- **Don't wipe a whole page body** (`replace_content`); use `update_content` instead.
-- **Don't rename a sub-page by title**, and **don't edit the `Notion Mirror` Docs to
-  change Notion** — those Docs are read-only reflections; use them only to read and
-  answer questions about my Notion.
+Even shorter core, if the above is still rejected for length:
 
-If you're unsure of an id or the exact shape, re-read `_Commands` instead of
-guessing.
+---
+
+To change my Notion, never edit it directly. For each change, create one normal
+Google Task with the JSON request in the notes (default list is fine; notes must
+start with a curly brace). Read my Doc _Commands first for the JSON shape and the
+name-to-id list. One task is one change. If I ask whether it worked, reread the task
+notes for a done or failed receipt. You cannot delete or archive pages or wipe a
+page body. To read my Notion, read the Docs in the Notion Mirror folder, never edit
+them.

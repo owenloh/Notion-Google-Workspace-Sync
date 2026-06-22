@@ -34,13 +34,20 @@ class NotionClient:
     def close(self) -> None:
         self._client.close()
 
-    def request(self, method: str, path: str, *, json: dict | None = None) -> dict[str, Any]:
-        """Issue a request with retry on 429 / 5xx and transient transport/SSL errors."""
+    def request(
+        self, method: str, path: str, *, json: dict | None = None, version: str | None = None
+    ) -> dict[str, Any]:
+        """Issue a request with retry on 429 / 5xx and transient transport/SSL errors.
+
+        ``version`` overrides the ``Notion-Version`` header for this call only (used
+        for the block-children fallback on pages that 400 under the pinned version).
+        """
+        headers = {"Notion-Version": version} if version else None
         delay = 1.0
         last_exc: httpx.TransportError | None = None
         for _attempt in range(5):
             try:
-                resp = self._client.request(method, path, json=json)
+                resp = self._client.request(method, path, json=json, headers=headers)
             except httpx.TransportError as exc:  # connect/read/SSL blips
                 last_exc = exc
                 log.warning(
@@ -65,11 +72,13 @@ class NotionClient:
         resp.raise_for_status()
         return {}
 
-    def paginate(self, method: str, path: str, *, json: dict | None = None) -> Iterator[dict]:
+    def paginate(
+        self, method: str, path: str, *, json: dict | None = None, version: str | None = None
+    ) -> Iterator[dict]:
         """Yield every result across paginated endpoints (start_cursor)."""
         payload = dict(json or {})
         while True:
-            data = self.request(method, path, json=payload)
+            data = self.request(method, path, json=payload, version=version)
             yield from data.get("results", [])
             if not data.get("has_more"):
                 break

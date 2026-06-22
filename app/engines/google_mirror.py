@@ -206,13 +206,18 @@ class GoogleMirror:
     # --- command inbox (Google Tasks) ---
     def command_list_id(self) -> str:
         if self._command_list_id is None:
-            self._command_list_id = gtasks.ensure_command_list(
+            self._command_list_id = gtasks.resolve_command_list(
                 self.services.tasks, self.command_tasklist_name
             )
         return self._command_list_id
 
     def pending_commands(self) -> list[dict]:
-        return gtasks.list_pending(self.services.tasks, self.command_list_id())
+        # On the shared default list, only JSON-shaped tasks count as commands so
+        # personal tasks are never picked up; a dedicated list stays permissive.
+        commands_only = self.command_list_id() == gtasks.DEFAULT_TASKLIST
+        return gtasks.list_pending(
+            self.services.tasks, self.command_list_id(), commands_only=commands_only
+        )
 
     def create_command(self, title: str, notes: str) -> dict:
         return gtasks.create_task(self.services.tasks, self.command_list_id(), title, notes)

@@ -45,7 +45,8 @@ def test_full_mirror_builds_tree_and_rows(session, settings, world):
     notion, google = world
     counts = MirrorOut(session, notion, google, settings).sync_all()
 
-    assert counts == {"area": 1, "project": 1, "action": 1, "page": 1, "failed": 0, "removed": 0}
+    assert counts == {"area": 1, "project": 1, "action": 1, "page": 1, "failed": 0,
+                      "removed": 0, "pruned": 0}
     assert google.structure_ready
 
     # Folder tree: Areas/Career/PourDynamics engine/Spec nesting.
@@ -207,6 +208,39 @@ def test_deletion_skips_existing_page_on_partial_crawl(session, settings, world)
     assert counts["removed"] == 0
     assert google.is_live(folder)                     # preserved
     assert repo.get_pair_by_notion_id(session, "p1").tombstone is False
+
+
+def test_root_page_not_duplicated_under_a_parent_root(session, settings):
+    """A page that is both a loose root and a child of another root is mirrored
+    once (as its own section), not duplicated under the parent."""
+    parent = make_item("P", "library", "Library")
+    refs = make_item("L", "reference", "Refs")  # also a child of Library
+    notion = FakeNotionSource({"P": parent, "L": refs}, {"P": "", "L": ""},
+                              {"P": ["L"]}, spine_ids=[], loose_ids=["P", "L"])
+    google = FakeGoogleMirror()
+    MirrorOut(session, notion, google, settings).sync_all()
+
+    refs_folders = [fid for fid, (nm, _) in google.folder_meta.items() if nm == "Refs"]
+    assert len(refs_folders) == 1                       # mirrored once, not twice
+    lpair = repo.get_pair_by_notion_id(session, "L")
+    ppair = repo.get_pair_by_notion_id(session, "P")
+    assert google.folder_meta[lpair.drive_folder_id][1] != ppair.drive_folder_id  # not under P
+
+
+def test_prune_removes_untracked_orphans(session, settings, world):
+    """An orphan Drive object no ledger pair references gets pruned; tracked
+    items and section folders survive."""
+    notion, google = world
+    MirrorOut(session, notion, google, settings).sync_all()
+    proj = repo.get_pair_by_notion_id(session, "p1")
+    orphan = google.create_folder("ORPHAN", proj.drive_folder_id)  # deep + untracked
+    google.create_doc("note", orphan)
+    assert google.is_live(orphan)
+
+    pruned = MirrorOut(session, notion, google, settings)._prune_untracked()
+    assert pruned >= 1
+    assert not google.is_live(orphan)                  # orphan trashed
+    assert google.is_live(proj.drive_folder_id)        # tracked project kept
 
 
 def test_mirror_is_idempotent(session, settings, world):

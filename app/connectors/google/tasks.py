@@ -16,8 +16,18 @@ RECEIPT_ERR = "✗"
 _RECEIPT_MARKERS = (RECEIPT_OK, RECEIPT_ERR)
 
 
-def ensure_command_list(tasks, name: str) -> str:
-    """Find-or-create the command tasklist; return its id."""
+DEFAULT_TASKLIST = "@default"
+
+
+def resolve_command_list(tasks, name: str) -> str:
+    """Return the tasklist id for the command inbox.
+
+    ``@default`` (or empty) → the user's primary list ("My Tasks"), which is what
+    Gemini Live writes to. Any other value is a list *title* to find-or-create
+    (legacy dedicated-list mode).
+    """
+    if not name or name == DEFAULT_TASKLIST:
+        return DEFAULT_TASKLIST
     resp = _exec(tasks.tasklists().list(maxResults=100))
     for tl in resp.get("items", []):
         if tl.get("title") == name:
@@ -41,8 +51,13 @@ def list_all(tasks, tasklist_id: str) -> list[dict]:
     return resp.get("items", [])
 
 
-def list_pending(tasks, tasklist_id: str) -> list[dict]:
-    """Return tasks that are not completed and not already receipted."""
+def list_pending(tasks, tasklist_id: str, commands_only: bool = False) -> list[dict]:
+    """Return tasks that are not completed and not already receipted.
+
+    With ``commands_only`` (used on the shared default list), only JSON-shaped
+    tasks (notes/title starting with ``{`` or ``[``) are returned, so personal
+    tasks sharing the list are never picked up, completed, or receipted.
+    """
     resp = _exec(
         tasks.tasks().list(
             tasklist=tasklist_id, showCompleted=False, showHidden=False, maxResults=100
@@ -55,6 +70,8 @@ def list_pending(tasks, tasklist_id: str) -> list[dict]:
         notes = task.get("notes") or ""
         if notes.lstrip().startswith(_RECEIPT_MARKERS):
             continue  # already processed, awaiting completion propagation
+        if commands_only and not command_text(task).lstrip().startswith(("{", "[")):
+            continue  # a personal (non-command) task on the shared list — leave it alone
         out.append(task)
     return out
 

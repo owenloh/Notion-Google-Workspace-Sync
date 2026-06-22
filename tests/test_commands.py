@@ -63,9 +63,21 @@ def test_relay_error_yields_cross_receipt(world, session, settings):
     assert google.finished[0][1].startswith("✗")
 
 
-def test_malformed_command_errors_without_relay(world, session, settings):
+def test_non_command_task_is_ignored(world, session, settings):
+    """A personal (non-JSON) task on the shared default list is left untouched."""
     notion, google = world
-    google.add_command("this is not a command", task_id="T3")
+    google.add_command("buy groceries", task_id="T3")
+    relay = FakeRelay()
+
+    n = CommandExecutor(session, notion, google, relay, settings).run_pending()
+    assert n == 0
+    assert relay.calls == [] and google.finished == []  # not forwarded, not receipted
+
+
+def test_malformed_json_command_gets_error_receipt(world, session, settings):
+    """A task that looks like a command (JSON) but is invalid gets a ✗ receipt."""
+    notion, google = world
+    google.add_command('{"path": oops}', task_id="T3b")
     relay = FakeRelay()
 
     CommandExecutor(session, notion, google, relay, settings).run_pending()

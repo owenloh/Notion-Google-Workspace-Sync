@@ -61,11 +61,15 @@ class MirrorOut:
 
         areas_root = self.google.ensure_folder("Areas", self.google.root_folder_id)
 
-        counts = {"area": 0, "project": 0, "action": 0, "page": 0, "failed": 0, "removed": 0}
+        counts = {"area": 0, "project": 0, "action": 0, "page": 0, "failed": 0,
+                  "removed": 0, "pruned": 0}
 
         # Every notion id the crawl enumerates; pairs NOT in here at the end are
         # candidates for deletion (verified before removal).
         seen: set[str] = {_norm(it.notion_id) for it in spine + loose}
+        # Top-level ids are mirrored independently (spine rows / loose-root sections);
+        # if recursion meets one as a child, skip it so it isn't duplicated.
+        top_level: set[str] = set(seen)
 
         by_kind = {"area": [], "project": [], "action": []}
         for it in spine:
@@ -111,13 +115,57 @@ class MirrorOut:
             + [it.notion_id for it in loose],
             id_to_title,
             seen,
+            top_level,
         )
         try:
             self._write_reference_docs(spine)
         except Exception:  # noqa: BLE001
             log.exception("writing _Dashboard/_Commands docs failed; continuing")
         counts["removed"] = self._remove_unseen(seen)
+        counts["pruned"] = self._prune_untracked()
         return counts
+
+    def _prune_untracked(self) -> int:
+        """Trash mirror objects no ledger pair points to (untracked orphans).
+
+        Deletion-detection only covers *tracked* pairs; orphans left by older code
+        (e.g. a page that was once mirrored under two parents) have no pair and
+        would linger forever. We trash any Drive object at depth >= 2 (i.e. *inside*
+        a section folder) that isn't referenced by a live pair. Depth 0/1 — the
+        root, section folders (Areas/References/…) and meta Docs (_Commands/…) — are
+        never touched, and any genuinely-tracked item is in the keep set, so a
+        transient mirror failure can't cause a false prune.
+        """
+        keep: set[str] = set()
+        for pair in repo.all_pairs(self.session):
+            if pair.drive_folder_id:
+                keep.add(pair.drive_folder_id)
+            if pair.gdoc_id:
+                keep.add(pair.gdoc_id)
+        try:
+            tree = self.google.drive_tree(self.google.root_folder_id)
+        except Exception:  # noqa: BLE001
+            log.exception("prune: could not read drive tree; skipping")
+            return 0
+        victims: list[str] = []
+
+        def visit(node: dict, depth: int) -> None:
+            nid = node.get("id")
+            if depth >= 2 and nid not in keep:
+                victims.append(nid)
+                return  # the whole orphaned subtree goes with it
+            for child in node.get("children", []) or []:
+                visit(child, depth + 1)
+
+        visit(tree, 0)
+        for nid in victims:
+            try:
+                self.google.trash(nid)
+            except Exception:  # noqa: BLE001
+                log.exception("prune: trashing %s failed", nid)
+        if victims:
+            log.info("pruned %d untracked orphan(s)", len(victims))
+        return len(victims)
 
     def _remove_unseen(self, seen: set[str]) -> int:
         """Tombstone + trash mirror objects whose Notion page is gone.
@@ -335,7 +383,8 @@ class MirrorOut:
     # --- recursion -----------------------------------------------------------
 
     def _recurse_all_children(
-        self, parent_ids: list[str], id_to_title, seen: set[str] | None = None
+        self, parent_ids: list[str], id_to_title, seen: set[str] | None = None,
+        skip_ids: set[str] | None = None,
     ) -> int:
         count = 0
         stack = list(parent_ids)
@@ -352,6 +401,10 @@ class MirrorOut:
             for child_id in child_ids:
                 if seen is not None:
                     seen.add(_norm(child_id))  # enumerated → not a deletion candidate
+                # A child that is itself a top-level root is mirrored independently
+                # (its own section/row) — don't duplicate it under this parent.
+                if skip_ids and _norm(child_id) in skip_ids:
+                    continue
                 try:
                     child = self.notion.get_item(child_id)
                     child.kind = "page"

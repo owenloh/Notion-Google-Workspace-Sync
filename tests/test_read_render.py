@@ -1,5 +1,7 @@
 """Read-only rich/nested rendering (Notion blocks → Markdown, one-way)."""
 
+from types import SimpleNamespace
+
 import httpx
 
 from app.connectors.notion import read as nread
@@ -7,15 +9,24 @@ from app.core.markdown import notion_blocks_to_markdown
 
 
 class _FakeClient:
-    """Minimal stand-in for NotionClient.paginate over /blocks/{id}/children."""
+    """Minimal stand-in for NotionClient.paginate over /blocks/{id}/children.
 
-    def __init__(self, children_by_id, fail_ids=()):
+    ``fail_ids`` 400 on the pinned version; those also in ``recover_ids`` succeed
+    when retried with the fallback version (exercising get_block_children).
+    """
+
+    def __init__(self, children_by_id, fail_ids=(), recover_ids=()):
         self.children_by_id = children_by_id
         self.fail_ids = set(fail_ids)
+        self.recover_ids = set(recover_ids)
+        self.settings = SimpleNamespace(
+            notion_version="2022-06-28", notion_version_fallback="2025-09-03"
+        )
 
-    def paginate(self, method, path):
+    def paginate(self, method, path, *, version=None):
         block_id = path.split("/")[2]  # /blocks/{id}/children
-        if block_id in self.fail_ids:
+        using_fallback = version == self.settings.notion_version_fallback
+        if block_id in self.fail_ids and not (using_fallback and block_id in self.recover_ids):
             req = httpx.Request(method, "https://api.notion.com" + path)
             resp = httpx.Response(400, request=req)
             raise httpx.HTTPStatusError("400", request=req, response=resp)
@@ -23,8 +34,8 @@ class _FakeClient:
 
 
 def test_fetch_block_tree_skips_unreadable_children():
-    # A toggle reports has_children but its /children 400s — it must be retained
-    # (rendered without children) and the overall crawl must not raise.
+    # A toggle reports has_children but its /children 400s on both versions — it
+    # must be retained (rendered without children) and the crawl must not raise.
     page_blocks = [
         {"id": "bad", "type": "toggle", "has_children": True, "toggle": {"rich_text": []}}
     ]
@@ -32,6 +43,17 @@ def test_fetch_block_tree_skips_unreadable_children():
     tree = nread._fetch_block_tree(client, "page")
     assert [b["id"] for b in tree] == ["bad"]
     assert "children" not in tree[0]  # children skipped, block kept
+
+
+def test_block_children_400_recovers_on_fallback_version():
+    # A page whose children 400 on the pinned version but succeed on the newer
+    # fallback version are fetched via the retry.
+    client = _FakeClient(
+        {"wiki": [{"id": "c1", "type": "paragraph", "paragraph": {"rich_text": []}}]},
+        fail_ids={"wiki"}, recover_ids={"wiki"},
+    )
+    blocks = nread.get_block_children(client, "wiki")
+    assert [b["id"] for b in blocks] == ["c1"]
 
 
 def _para(text):
