@@ -38,6 +38,8 @@ def test_commands_doc_has_paths_guardrails_and_points_to_dashboard():
     assert "FORBIDDEN" in md                        # anti-refusal guardrail present
     assert "pages" in md and "Common mistakes" in md   # exact-envelope + anti-improvise
     assert "add_action" in md                       # shows the known wrong shapes
+    assert "Properties per database" in md          # per-DB title/property guidance
+    assert "title field differs" in md              # Projects use `Project`, not `Name`
     # The full id catalog is NOT embedded here (kept lean) — it points to _Dashboard.
     assert "_Dashboard" in md
     assert "PourDynamics engine → `p1`" not in md

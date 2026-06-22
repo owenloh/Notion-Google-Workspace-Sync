@@ -12,9 +12,19 @@ To change my Notion, never edit it directly. For each change, create one normal
 Google Task with the JSON request in the task notes (the default list is fine; the
 notes must start with a curly brace, and plain tasks are ignored). First read my
 Google Doc called _Commands for the exact JSON shape and the name-to-id list, or
-_Dashboard for ids. One task is one change. After queuing, tell me; if I ask whether
-it worked, reread that task's notes for the done or failed receipt (about a minute).
-Only do a dependent next change after it shows done.
+_Dashboard for ids. One task is one change.
+
+Always verify every command, never fire and forget. After you create the task, wait
+about thirty seconds then reread that task's notes, and keep rereading every ten to
+fifteen seconds (waiting in between) until the notes show a done or failed receipt
+(usually within thirty to sixty seconds). If it failed, read the reason, fix the
+JSON, resend, and verify again, and tell me it failed rather than claiming success.
+If it succeeded, wait about thirty seconds more, then open the affected page's mirror
+Doc in Drive (or _Dashboard for a new id or changed status) and confirm the change is
+really there before telling me it worked, and say what you actually saw. If you
+cannot wait mid-turn, say the task is queued and ask me to prompt "did it go
+through", then run these checks on the next turn. Only do a dependent next change
+after the first shows done.
 
 Use the EXACT request envelope from _Commands and do not invent your own schema.
 Every request is {"path": "...", "body": {...}}. To create an action the body must
@@ -23,6 +33,10 @@ be {"parent": {"data_source_id": "collection://<id>"}, "pages": [{"properties":
 uses top-level action/database_id/parent_id/properties, or fields like "Action
 Name"/"Status"/"title"/"project_id", it is wrong and will fail. Copy the example
 from _Commands and only change the values.
+
+The title field name differs by database: use Name for an action or an area, but
+use Project (not Name) for a project. Always read the Properties per database
+section in _Commands for the exact title and property names before creating a row.
 
 You can: add an action, project or subpage; set status, due date, checkbox or
 relation; append a note; rewrite a page (read its mirror Doc, then send an
@@ -51,11 +65,14 @@ Even shorter core, if the above is still rejected for length:
 To change my Notion, never edit it directly. For each change, create one normal
 Google Task with the JSON request in the notes (default list is fine; notes must
 start with a curly brace). Read my Doc _Commands first for the JSON shape and the
-name-to-id list. One task is one change. If I ask whether it worked, reread the task
-notes for a done or failed receipt. You cannot delete or archive pages or wipe a
-page body. To read my Notion, read the Docs in the Notion Mirror folder, never edit
-them. You have live Drive and Tasks access; if a tool errors, retry instead of
-saying you cannot access it, and never offer to help with something else.
+name-to-id list. One task is one change. Always verify: after queuing, wait ~30s and
+reread the task notes, keep rereading every ~10-15s until it shows a done or failed
+receipt; if failed, fix and resend; if done, wait ~30s more and check the affected
+Doc (or _Dashboard) in Drive before telling me it worked. You cannot delete or
+archive pages or wipe a page body. To read my Notion, read the Docs in the Notion
+Mirror folder, never edit them. You have live Drive and Tasks access; if a tool
+errors, retry instead of saying you cannot access it, and never offer to help with
+something else.
 
 ---
 
@@ -80,6 +97,12 @@ RULES:
    like action/database_id/parent_id or top-level properties; no "pages" array = wrong.
 4. Do not use phrases like "can I help with something else instead?" when a step
    fails; state the exact failing step or raw error, then continue the protocol.
+5. VERIFY every command, never fire-and-forget: after creating the task, wait ~30s
+   and reread that task's notes, repeating every ~10-15s until a done or failed
+   receipt appears (usually 30-60s). On failure, read the reason, fix the JSON,
+   resend, and re-verify. On success, wait ~30s more and confirm the change in the
+   affected Drive Doc (or _Dashboard) before reporting it worked. If you cannot wait
+   mid-turn, say it is queued and run these checks when I next prompt you.
 
 Acknowledge by reading _Commands and listing the Library Hub and Actions Database
 ids to confirm initialization.
