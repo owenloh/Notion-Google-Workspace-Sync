@@ -242,6 +242,24 @@ def test_prune_removes_untracked_orphans(session, settings, world):
     assert google.is_live(proj.drive_folder_id)        # tracked project kept
 
 
+def test_prune_keeps_unsorted_container_holding_tracked_projects(session, settings):
+    """A non-ledger container folder (Areas/_Unsorted) that holds tracked items
+    must NOT be pruned, even though it has no pair of its own."""
+    proj = make_item("p1", "project", "Homeless Project",
+                     properties={"Project": "Homeless Project", "Status": "Active"},
+                     relations={})  # no Area → parked under _Unsorted
+    notion = FakeNotionSource({"p1": proj}, {"p1": "body"}, {},
+                              spine_ids=["p1"], loose_ids=[])
+    google = FakeGoogleMirror()
+    MirrorOut(session, notion, google, settings).sync_all()
+    unsorted = next(i for i, (n, _) in google.folder_meta.items() if n == "_Unsorted")
+    proj_folder = repo.get_pair_by_notion_id(session, "p1").drive_folder_id
+
+    MirrorOut(session, notion, google, settings)._prune_untracked()
+    assert google.is_live(unsorted)        # container preserved (holds a tracked project)
+    assert google.is_live(proj_folder)     # the project itself preserved
+
+
 def test_prune_sweeps_obsolete_empty_section_folder(session, settings, world):
     """An empty, de-configured top-level section (e.g. old References) is removed;
     current sections and meta are left alone."""
