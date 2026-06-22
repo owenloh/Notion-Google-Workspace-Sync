@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     # the full crawl only backstops what /search can't report — deletions, orphan
     # pruning, drift healing. Pick a low-activity hour + your timezone.
     full_sync_hour: int = 4
-    scheduler_timezone: str = "UTC"
+    scheduler_timezone: str = "Europe/London"
     inflight_ttl_seconds: int = 300
     tombstone_grace_seconds: int = 86400
     # Cadence for the command inbox poll (Google Tasks has no push).
