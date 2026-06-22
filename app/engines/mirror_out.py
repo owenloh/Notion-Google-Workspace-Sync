@@ -238,8 +238,8 @@ class MirrorOut:
             build_dashboard_md,
         )
 
-        # Only ACTIVE items go on the voice surface, so the Docs stay lean and don't
-        # grow unbounded with completed actions; the full set lives in the index sheet.
+        # All areas/projects go on the voice surface; only completed actions are
+        # dropped so the Docs don't grow unbounded (full set lives in the index sheet).
         entries = [
             CatalogEntry(kind=it.kind, name=it.title, notion_id=it.notion_id)
             for it in spine
@@ -507,15 +507,11 @@ def _norm(notion_id: str | None) -> str:
 def _is_active(item: NotionItem) -> bool:
     """Whether an item belongs on the voice surface (_Dashboard/_Commands).
 
-    Completed/archived items are excluded to keep the Docs lean (they still live in
-    the _Notion Index sheet): Actions that are Done, Projects Complete/Dropped, Areas
-    Retired.
+    All Areas and Projects are kept. Only **completed Actions** are dropped — those
+    marked Done or with the checkbox ticked — to bound growth as actions pile up
+    (they still live in the _Notion Index sheet).
     """
-    props = item.properties or {}
     if item.kind == "action":
-        return (props.get("Action Status") or "") != "Done"
-    if item.kind == "project":
-        return (props.get("Status") or "") not in {"Complete", "Dropped"}
-    if item.kind == "area":
-        return (props.get("Status") or "") != "Retired"
+        props = item.properties or {}
+        return (props.get("Action Status") or "") != "Done" and not props.get("Checkbox")
     return True
