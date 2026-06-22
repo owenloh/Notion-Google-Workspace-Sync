@@ -31,8 +31,9 @@ Google Tasks "Notion Commands"   ← Gemini writes one JSON request per task
 Drive: Notion Mirror/            ← read-only reflection
   _Commands (Doc)                  how to write + allowed paths + name→id catalog
   _Dashboard (Doc)                 compact Areas/Projects/Actions list with ids
+  _Intray (Microsoft To-Do) (Doc)  read-only mirror of the MS To-Do in-tray
   Areas/<Area>/<Project>/….gdoc    rich bodies, recursed into nested blocks
-  References/  Briefing/
+  References/  Briefing/  Horizons/  Library/
 ```
 
 ## How it stays in sync
@@ -126,4 +127,85 @@ Then paste `docs/SAVED_INFO.md` into Gemini → Settings → **Saved info**.
 > `collection://b9c0cd8c-fa6c-46d1-95ed-87d7ef97d971`, Actions
 > `collection://2ebc58c5-8617-4748-8021-fcc2a37d3a97`. The generated `_Commands` Doc
 > embeds these plus the live name↔id catalog.
+
+---
+
+# Operating guide — what works, how long it takes, what it can't do
+
+The final, verified rundown of day-to-day behaviour (validated live, 2026-06).
+
+## What Gemini can do by voice
+
+Reads come from the Drive Docs mirror; writes go through the Google Tasks inbox →
+guarded relay → Alistair API. One JSON request per task.
+
+| Action | How | Endpoint / command |
+| --- | --- | --- |
+| **Read** anything | reads the mirror Docs | `_Dashboard`, `_Commands`, per-page `.gdoc`, `_Intray` |
+| **Create** action / project / sub-page | `create-pages` | `/api/notion/create-pages` |
+| **Set properties** (status, due, checkbox, relation) | `update_properties` | `/api/notion/update-page` |
+| **Append a note** to a body | `insert_content` | `/api/notion/update-page` |
+| **Edit / rewrite page text** | `update_content` (`old_str`→`new_str`) | `/api/notion/update-page` |
+| **Microsoft To-Do** add / complete / clear | `add` / `done` / `delete` | `/api/intray` |
+
+### Editing/rewriting a page (e.g. "summarise this gibberish")
+Gemini reads the page's mirror Doc → summarises → sends `update_content` with the
+old text as `old_str` and the refined text as `new_str`. This is a real content
+replacement and is **safe** (it won't delete nested sub-pages). It needs the old
+text matched exactly, so it's reliable for short/medium notes; long messy pages may
+need a couple of tries. A blind whole-body wipe (`replace_content`) is **blocked**
+(see below).
+
+## What it cannot do
+
+- **Delete or archive Notion pages** — the Alistair API has no such endpoint;
+  these commands return `✗ unsupported`. **Deletion is manual** (do it in Notion);
+  the next `full_reconcile` then trashes the mirror Doc/folder + clears the row.
+- **Blind whole-body replace** (`replace_content`) — blocked by the relay guard
+  (footgun: it can also delete nested sub-pages/DBs). Returns `✗` unless `force:true`.
+  Use `update_content` instead.
+- **Rename a sub-page by title** — relay quirk *clears* the title; renaming
+  database items (areas/projects/actions) is fine.
+- Gemini Live itself can't write Sheet cells / Doc bodies or call HTTP/MCP directly —
+  only the Tasks inbox. Confirmation is a **follow-up turn** ("did that go
+  through?") that reads the `✓`/`✗` receipt; Live can't block mid-turn on the result.
+
+## How long changes take to reflect
+
+| Change | Reflects in | Mechanism |
+| --- | --- | --- |
+| **Voice write** (any command) | **~30–60 s** | `poll_commands` (30 s) → relay → receipt + **instant re-reflect** of that page |
+| Gemini chaining edits on its own change | wait for the **receipt** first (~30–60 s) | new ids appear in `_Dashboard`/`_Commands` after re-reflect; then build on top |
+| Manual edit — spine prop/body, loose **root** page | **~3 min** | `poll_notion` (by `last_edited_time`) |
+| Manual edit — **nested** sub-page | **~30 min** | only `full_reconcile` recurses children |
+| Manual **rename / move / delete** | **~30 min** | `full_reconcile` (rename-in-place, move relocate, delete tombstone) |
+| (optional Notion webhook, off) | near-instant | Phase 2 |
+
+## Copies / same-name pages
+
+Drive objects are addressed by **ledger id, not name**:
+
+- Two **new** same-named items → **distinct** folders/Docs (no collision).
+- Rename → same folder/Doc renamed **in place** (no orphan); move → relocates in
+  place; delete → detected, Doc/folder trashed + row cleared + pair tombstoned.
+- Same-named items under different parents are kept separate (normal).
+- *Pre-existing* already-merged collisions aren't retroactively split.
+
+## Polling, errors & rate limits
+
+- **Per-item isolation** — one bad page is counted `failed` and skipped, never
+  aborting the run; an unreadable body degrades to a placeholder and continues.
+- **Verify-before-delete** — each vanished page is re-fetched before removal, so a
+  partial/failed crawl can never false-delete a page that still exists.
+- **Google 429 / Sheets** — row cache + exponential backoff/retry; mirror jobs are
+  **serialized** (httplib2 isn't thread-safe) with a 60 s HTTP timeout. No clashes
+  with rate limits by design.
+- **No push anywhere** → polling only (Tasks 30 s; Notion 3 min / 30 min). Receipts
+  (`✓` / `✗`, bad id → `✗`) are written back into the task notes.
+
+## Admin endpoints (key-gated: `?key=$ADMIN_API_KEY`)
+
+`POST /admin/full-sync` (background) + `GET /admin/sync-status` · `POST
+/admin/reset-ledger` · `GET /admin/drive-tree` · `GET /admin/read-doc?id=` · `GET
+/admin/read-tab?tab=` · `POST /admin/test-command` · `GET /admin/list-commands`.
 

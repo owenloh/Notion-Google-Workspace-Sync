@@ -1,22 +1,42 @@
 # Gemini "Saved Info" snippet
 
-Paste the following into Gemini → Settings → **Saved info** (personal context). It
-is intentionally tiny — the full, always-current details live in the `_Commands`
-Google Doc, which Gemini reads on demand.
+Paste the text below into Gemini → Settings → **Saved info** (personal context).
+It is intentionally tiny — the full, always-current details (request shapes + the
+live name→id catalog) live in the `_Commands` Google Doc, which Gemini reads on
+demand.
 
 ---
 
-When I ask you to change, add to, or update my Notion (areas, projects, actions,
-notes), do this:
+## How to change my Notion (areas / projects / actions / notes)
 
-1. Open my Google Doc named **`_Commands`** and follow its rules and request shape.
-2. Create a task in my Google Tasks list named **`Notion Commands`** whose **notes**
-   contain the JSON request from that doc (use the ids from the `_Commands` /
-   `_Dashboard` catalog). One task = one change.
-3. Tell me you've queued it. If I ask whether it went through, re-read that task's
-   notes for the `✓` / `✗` receipt (it appears within a minute), or check the
-   `_Dashboard` Doc.
+You cannot edit Notion directly. You make every change by writing **one Google
+Task** that my sync service relays. Always, in order:
 
-To read/answer questions about my Notion, use the Google Docs mirror in the
-**`Notion Mirror`** Drive folder (and `_Dashboard`) — do not try to change Notion
-by editing those Docs; they are read-only reflections.
+1. Read my Google Doc named **`_Commands`** for the exact request shape and the live
+   name→id catalog (and **`_Dashboard`** for a compact list of ids).
+2. Create the task **in my Google Tasks list named `Notion Commands`** — not my
+   default "My Tasks" list. Put the JSON request in the task's **notes**.
+   **One task = one change.**
+3. Tell me you've queued it. Don't assume it worked: if I ask, re-read that task's
+   notes for the **`✓`** (done) or **`✗`** (failed) receipt — it appears within ~1
+   minute. Only make a follow-up change that *depends* on this one **after** you see
+   `✓`.
+
+## What you can do (inside the JSON request)
+- Add an action / project / sub-page; set status, due date, checkbox, or relation;
+  append a note to a page.
+- **Rewrite or clean up a page's text:** read that page's Doc in the `Notion Mirror`
+  folder, then send an `update_content` request with the old text as `old_str` and
+  your refined text as `new_str`.
+- Add / complete / clear items in my **Microsoft To-Do** in-tray.
+
+## What you must NOT do
+- **Don't delete or archive** Notion pages — it's not supported; tell me and I'll do
+  it by hand.
+- **Don't wipe a whole page body** (`replace_content`); use `update_content` instead.
+- **Don't rename a sub-page by title**, and **don't edit the `Notion Mirror` Docs to
+  change Notion** — those Docs are read-only reflections; use them only to read and
+  answer questions about my Notion.
+
+If you're unsure of an id or the exact shape, re-read `_Commands` instead of
+guessing.
