@@ -51,6 +51,11 @@ def poll_notion(rt: Runtime | None = None) -> int:
             engine = MirrorOut(session, rt.notion, rt.google, rt.settings)
             for it in changed:
                 engine.mirror_item(it)
+            # Keep the MS To-Do mirror fresh between full reconciles (cheap, hash-gated).
+            try:
+                engine.refresh_intray()
+            except Exception:  # noqa: BLE001 — best-effort
+                log.exception("intray refresh in poll_notion failed")
             newest = max((it.last_edited_time or "" for it in items), default=watermark)
             if newest:
                 repo.set_state(session, _NOTION_WATERMARK, newest)

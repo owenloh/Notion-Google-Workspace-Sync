@@ -62,6 +62,21 @@ class FakeGoogleMirror:
     def is_live(self, file_id: str) -> bool:
         return file_id in self.folder_meta or file_id in self.doc_meta
 
+    def drive_tree(self, folder_id: str | None = None, depth: int = 0, max_depth: int = 6) -> dict:
+        folder_id = folder_id or self.root_folder_id
+        node: dict = {"id": folder_id, "type": "folder", "children": []}
+        if depth >= max_depth:
+            return node
+        for fid, (nm, parent) in self.folder_meta.items():
+            if parent == folder_id:
+                sub = self.drive_tree(fid, depth + 1, max_depth)
+                sub["name"] = nm
+                node["children"].append(sub)
+        for did, (nm, parent) in self.doc_meta.items():
+            if parent == folder_id:
+                node["children"].append({"id": did, "type": "doc", "name": nm})
+        return node
+
     def write_doc(self, doc_id: str, markdown: str) -> None:
         self.docs[doc_id] = markdown
         self.write_doc_calls += 1
