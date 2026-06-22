@@ -42,7 +42,7 @@ Drive: Notion Mirror/            ← read-only reflection
 | --- | --- | --- |
 | `poll_commands` | ~30 s | run pending command tasks (Tasks has no push) |
 | `poll_incremental` | ~2 min | reflect **every page changed since the watermark** — deep sub-pages included — via Notion `/search` by `last_edited_time` |
-| `full_reconcile` | ~6 h | backstop only: deletions, orphan pruning, drift healing, regenerate Docs |
+| `full_reconcile` | daily, 04:00 (cron) | backstop only: deletions, orphan pruning, drift healing, regenerate Docs |
 | per-command re-reflect | instant | refresh the page a command just changed |
 | Notion webhook | optional | near-instant reflection of hand edits (off by default) |
 
@@ -183,7 +183,7 @@ need a couple of tries. A blind whole-body wipe (`replace_content`) is **blocked
 | Gemini chaining edits on its own change | wait for the **receipt** first (~30–60 s) | new ids appear in `_Dashboard`/`_Commands` after re-reflect; then build on top |
 | Manual edit — any page **edit** (incl. nested sub-pages) | **~2 min** | `poll_incremental` (Notion `/search` by `last_edited_time`, any depth) |
 | Manual **rename / move** | **~2 min** | `poll_incremental` (rename-in-place / move via ledger id) |
-| Manual **delete**, new deep subtree, orphan cleanup | **~6 h** | `full_reconcile` backstop (search can't report deletions) |
+| Manual **delete**, new deep subtree, orphan cleanup | **next 04:00** | daily `full_reconcile` backstop (search can't report deletions) |
 | (optional Notion webhook, off) | near-instant | Phase 2 |
 
 ## Copies / same-name pages

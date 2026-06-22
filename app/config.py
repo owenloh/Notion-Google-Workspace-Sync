@@ -67,11 +67,11 @@ class Settings(BaseSettings):
     # changed since the watermark via Notion /search, deep sub-pages included.
     notion_poll_seconds: int = 120
     google_poll_seconds: int = 120  # legacy (Google->Notion direction removed); unused
-    # Full re-crawl cadence. Incremental now handles all *edits*; the full crawl is
-    # only the backstop for what /search can't report — deletions, orphan pruning,
-    # and drift healing — so it runs INFREQUENTLY to avoid holding the mirror lock
-    # (and starving commands) for its ~minutes-long run. Default 6h.
-    full_sync_seconds: int = 21600
+    # Full re-crawl runs ONCE A DAY (cron), since incremental now handles all edits;
+    # the full crawl only backstops what /search can't report — deletions, orphan
+    # pruning, drift healing. Pick a low-activity hour + your timezone.
+    full_sync_hour: int = 4
+    scheduler_timezone: str = "UTC"
     inflight_ttl_seconds: int = 300
     tombstone_grace_seconds: int = 86400
     # Cadence for the command inbox poll (Google Tasks has no push).
