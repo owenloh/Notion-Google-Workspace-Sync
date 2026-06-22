@@ -215,10 +215,23 @@ async def list_commands(
     rt = get_runtime()
     items = rt.google.list_commands()
     return {"status": "ok", "tasks": [
-        {"id": t.get("id"), "title": t.get("title"),
+        {"id": t.get("id"), "title": t.get("title"), "list": t.get("_tasklist_title"),
          "status": t.get("status"), "notes": t.get("notes")}
         for t in items
     ]}
+
+
+@app.get("/admin/tasklists")
+async def tasklists(
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+) -> dict[str, object]:
+    """Diagnostic: every Google Tasks list with its pending tasks (unfiltered), so
+    we can see which list commands land in and whether they're JSON-shaped."""
+    _check_admin_key(x_admin_key or key)
+    from app.runtime import get_runtime
+
+    return {"status": "ok", "lists": get_runtime().google.tasklists_overview()}
 
 
 @app.get("/admin/read-tab")
