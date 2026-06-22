@@ -24,44 +24,56 @@ _NOTION_WATERMARK = "notion_watermark"
 _MIRROR_LOCK = threading.Lock()
 
 
-def select_changed(
-    items: list[NotionItem], watermark: str, known_ids: set[str]
-) -> list[NotionItem]:
-    """Items edited after the watermark, or not yet mirrored. Pure/testable."""
-    out = []
-    for it in items:
-        edited = it.last_edited_time or ""
-        if it.notion_id not in known_ids or (watermark and edited > watermark) or not watermark:
-            out.append(it)
-    return out
+def _in_scope(session, item: NotionItem, loose_ids: set[str]) -> bool:
+    """Should a changed page be reflected? In scope = already tracked, a spine row,
+    a loose root, or a child of a tracked page. Anything else (pages the integration
+    can see but we don't mirror) is ignored; the rare full reconcile is the backstop
+    for brand-new deep subtrees whose parent isn't tracked yet."""
+    if item.kind in {"area", "project", "action"}:
+        return True
+    nid = item.notion_id.replace("-", "")
+    if nid in loose_ids:
+        return True
+    if repo.get_pair_by_notion_id(session, item.notion_id) is not None:
+        return True
+    return bool(item.parent_id) and repo.get_pair_by_notion_id(session, item.parent_id) is not None
 
 
-def poll_notion(rt: Runtime | None = None) -> int:
-    """Mirror Notion items changed since the last watermark. Returns count."""
+def poll_incremental(rt: Runtime | None = None) -> int:
+    """Reflect every Notion page changed since the watermark — including deep
+    sub-pages (via /search by last_edited_time). Replaces the old shallow
+    spine/loose delta poll; deep hand-edits now show within one poll cycle."""
     rt = rt or get_runtime()
     if not _MIRROR_LOCK.acquire(blocking=False):
-        log.info("poll_notion skipped (a mirror sync is already running)")
+        log.info("poll_incremental skipped (a mirror sync is already running)")
         return 0
     try:
         with session_scope() as session:
-            watermark = repo.get_state(session, _NOTION_WATERMARK)
-            known = {p.notion_id for p in repo.all_pairs(session, include_tombstoned=True)}
-            items = rt.notion.spine_items() + rt.notion.loose_items()
-            changed = select_changed(items, watermark, known)
+            from app.engines.notion_source import LOOSE_PAGES
+
+            loose_ids = {k.replace("-", "") for k in LOOSE_PAGES}
+            watermark = repo.get_state(session, _NOTION_WATERMARK) or ""
+            changed = rt.notion.changed_since(watermark)
             engine = MirrorOut(session, rt.notion, rt.google, rt.settings)
+            done = 0
             for it in changed:
-                engine.mirror_item(it)
-            # Keep the MS To-Do mirror fresh between full reconciles (cheap, hash-gated).
+                if not _in_scope(session, it, loose_ids):
+                    continue
+                try:
+                    engine.mirror_item(it)
+                    done += 1
+                except Exception:  # noqa: BLE001 — per-item isolation
+                    log.exception("incremental reflect failed for %s", it.notion_id)
             try:
                 engine.refresh_intray()
             except Exception:  # noqa: BLE001 — best-effort
-                log.exception("intray refresh in poll_notion failed")
-            newest = max((it.last_edited_time or "" for it in items), default=watermark)
+                log.exception("intray refresh in poll_incremental failed")
+            newest = max((it.last_edited_time or "" for it in changed), default=watermark)
             if newest:
                 repo.set_state(session, _NOTION_WATERMARK, newest)
-            if changed:
-                log.info("poll_notion mirrored %d changed item(s)", len(changed))
-            return len(changed)
+            if done:
+                log.info("poll_incremental reflected %d changed page(s)", done)
+            return done
     finally:
         _MIRROR_LOCK.release()
 

@@ -1,21 +1,27 @@
-"""Delta selection used by the Notion poll."""
+"""Scope filter for the incremental reflect (which changed pages we mirror)."""
 
-from app.scheduler.jobs import select_changed
+from app.ledger import repo
+from app.scheduler.jobs import _in_scope
 from tests.fakes import make_item
 
-
-def test_select_changed_picks_new_and_edited():
-    a = make_item("a", "area", "A", last_edited="2026-06-21T10:00:00.000Z")
-    b = make_item("b", "area", "B", last_edited="2026-06-21T08:00:00.000Z")
-    c = make_item("c", "area", "C", last_edited="2026-06-21T09:30:00.000Z")
-    items = [a, b, c]
-    # Watermark at 09:00 — only 'a' is newer; 'c' is also new (not yet known).
-    changed = select_changed(items, "2026-06-21T09:00:00.000Z", known_ids={"b", "a"})
-    ids = {i.notion_id for i in changed}
-    assert ids == {"a", "c"}
+LOOSE = {"1fa6f0ccdd76809e8bcbe5db5ae28237"}  # Library hub (undashed)
 
 
-def test_empty_watermark_selects_all():
-    items = [make_item("a", "area", "A"), make_item("b", "area", "B")]
-    changed = select_changed(items, "", known_ids={"a", "b"})
-    assert len(changed) == 2
+def test_spine_and_loose_and_tracked_pages_are_in_scope(session):
+    # Spine row.
+    assert _in_scope(session, make_item("a", "area", "A"), LOOSE)
+    # Loose root (matched undashed).
+    loose = make_item("1fa6f0cc-dd76-809e-8bcb-e5db5ae28237", "library", "Library")
+    assert _in_scope(session, loose, LOOSE)
+    # A page we already track.
+    repo.upsert_pair(session, "p1", kind="page", title="Tracked", drive_folder_id="F1")
+    assert _in_scope(session, make_item("p1", "page", "Tracked"), LOOSE)
+
+
+def test_child_of_tracked_parent_is_in_scope_but_orphan_is_not(session):
+    repo.upsert_pair(session, "parent", kind="page", title="Parent", drive_folder_id="F2")
+    child = make_item("child", "page", "Child", parent_id="parent")
+    assert _in_scope(session, child, LOOSE)               # parent is tracked → place under it
+
+    orphan = make_item("loner", "page", "Loner", parent_id="unknown")
+    assert not _in_scope(session, orphan, LOOSE)          # unknown parent, untracked → skip

@@ -141,6 +141,28 @@ def get_page(client: NotionClient, page_id: str) -> NotionItem:
     return page_to_item(page)
 
 
+def search_pages_changed_since(client: NotionClient, since: str) -> list[NotionItem]:
+    """Pages edited at/after ``since`` (ISO), via /search sorted by last_edited_time.
+
+    Unlike a spine query, this surfaces *any* changed page the integration can see,
+    including deep sub-pages (each page bumps its own last_edited_time). Results are
+    newest-first, so we stop once we pass the watermark.
+    """
+    body = {
+        "sort": {"timestamp": "last_edited_time", "direction": "descending"},
+        "filter": {"property": "object", "value": "page"},
+    }
+    out: list[NotionItem] = []
+    for page in client.paginate("POST", "/search", json=body):
+        if page.get("object") != "page":
+            continue
+        let = page.get("last_edited_time") or ""
+        if since and let <= since:
+            break  # descending order → everything after this is older than the watermark
+        out.append(page_to_item(page))
+    return out
+
+
 def get_block_children(client: NotionClient, block_id: str) -> list[dict]:
     """Return the raw child blocks of a block/page (one level).
 

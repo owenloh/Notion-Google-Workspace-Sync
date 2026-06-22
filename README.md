@@ -41,10 +41,15 @@ Drive: Notion Mirror/            ← read-only reflection
 | Layer | Cadence | Purpose |
 | --- | --- | --- |
 | `poll_commands` | ~30 s | run pending command tasks (Tasks has no push) |
-| `poll_notion` | ~3 min | mirror spine + loose pages changed by `last_edited_time` |
-| `full_reconcile` | ~30 min | recurse all child pages, heal drift, regenerate Docs |
+| `poll_incremental` | ~2 min | reflect **every page changed since the watermark** — deep sub-pages included — via Notion `/search` by `last_edited_time` |
+| `full_reconcile` | ~6 h | backstop only: deletions, orphan pruning, drift healing, regenerate Docs |
 | per-command re-reflect | instant | refresh the page a command just changed |
 | Notion webhook | optional | near-instant reflection of hand edits (off by default) |
+
+`poll_incremental` catches edits at any depth (each page bumps its own
+`last_edited_time`), so the expensive full crawl no longer needs to run often — it
+holds the mirror lock for minutes, so keeping it infrequent is what stops commands
+from being starved.
 
 Propagation is incremental — only content whose hash changed is rewritten.
 
@@ -176,9 +181,9 @@ need a couple of tries. A blind whole-body wipe (`replace_content`) is **blocked
 | --- | --- | --- |
 | **Voice write** (any command) | **~30–60 s** | `poll_commands` (30 s) → relay → receipt + **instant re-reflect** of that page |
 | Gemini chaining edits on its own change | wait for the **receipt** first (~30–60 s) | new ids appear in `_Dashboard`/`_Commands` after re-reflect; then build on top |
-| Manual edit — spine prop/body, loose **root** page | **~3 min** | `poll_notion` (by `last_edited_time`) |
-| Manual edit — **nested** sub-page | **~30 min** | only `full_reconcile` recurses children |
-| Manual **rename / move / delete** | **~30 min** | `full_reconcile` (rename-in-place, move relocate, delete tombstone) |
+| Manual edit — any page **edit** (incl. nested sub-pages) | **~2 min** | `poll_incremental` (Notion `/search` by `last_edited_time`, any depth) |
+| Manual **rename / move** | **~2 min** | `poll_incremental` (rename-in-place / move via ledger id) |
+| Manual **delete**, new deep subtree, orphan cleanup | **~6 h** | `full_reconcile` backstop (search can't report deletions) |
 | (optional Notion webhook, off) | near-instant | Phase 2 |
 
 ## Copies / same-name pages

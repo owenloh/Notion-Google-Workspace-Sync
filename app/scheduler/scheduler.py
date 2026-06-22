@@ -29,9 +29,9 @@ def build_scheduler() -> AsyncIOScheduler:
     settings = get_settings()
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
-        _guard(jobs.poll_notion),
+        _guard(jobs.poll_incremental),
         IntervalTrigger(seconds=settings.notion_poll_seconds),
-        id="poll_notion",
+        id="poll_incremental",
         max_instances=1,
         coalesce=True,
     )
