@@ -16,7 +16,6 @@ def _action_page():
             "Name": {"type": "title", "title": [{"plain_text": "Email Bob"}]},
             "Action Status": {"type": "status", "status": {"name": "Next"}},
             "Due": {"type": "date", "date": {"start": "2026-06-25"}},
-            "Checkbox": {"type": "checkbox", "checkbox": True},
             "Project": {"type": "relation", "relation": [{"id": "proj-9"}]},
         },
     }
@@ -29,7 +28,6 @@ def test_extract_title_and_properties():
     assert scalars["Name"] == "Email Bob"
     assert scalars["Action Status"] == "Next"
     assert scalars["Due"] == "2026-06-25"
-    assert scalars["Checkbox"] is True
     assert relations["Project"] == ["proj-9"]
 
 
@@ -52,13 +50,12 @@ def test_page_to_item_classifies_by_database_id():
 def test_build_properties_shapes_payload():
     payload = build_properties(
         "action",
-        {"Name": "Email Bob", "Action Status": "Next", "Due": "2026-06-25", "Checkbox": "true"},
+        {"Name": "Email Bob", "Action Status": "Next", "Due": "2026-06-25"},
         relation_ids={"Project": ["proj-9"]},
     )
     assert payload["Name"]["title"][0]["text"]["content"] == "Email Bob"
     assert payload["Action Status"]["status"]["name"] == "Next"
     assert payload["Due"]["date"]["start"] == "2026-06-25"
-    assert payload["Checkbox"]["checkbox"] is True
     assert payload["Project"]["relation"] == [{"id": "proj-9"}]
 
 
@@ -83,7 +80,6 @@ def test_extract_build_projection_consistency():
             "Name": "Email Bob",
             "Action Status": "Next",
             "Due": "2026-06-25",
-            "Checkbox": "true",
             "Project": "PourDynamics engine",
         },
     )

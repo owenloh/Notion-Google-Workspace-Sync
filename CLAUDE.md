@@ -90,7 +90,8 @@ Three linked databases (data-source ids):
 - **Projects** `f0ea8841-ca74-47b7-a28a-0b367bca8c41` — Project, Area(→Areas),
   Direction, Status (Active/Someday/Complete/Dropped), Repo, Next actions(→Actions)
 - **Actions** `1d3eb1dd-2803-4692-a4d5-6ca9709ae570` — Name, Action Status
-  (Next/Waiting/Someday/Done), Due, Project(→Projects), Checkbox
+  (Next/Waiting/Someday/Done — `Done` is the sole "completed" signal), Due,
+  Project(→Projects). (No Checkbox — removed; status replaces it.)
 
 Loose pages (mirrored as items, each in its own section folder; children recursed):
 Briefing "Alistair's Brief" `3806f0cc-dd76-80bb-9e16-fcce720de5ee`; References

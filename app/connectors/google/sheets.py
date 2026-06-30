@@ -18,7 +18,7 @@ TAB_COLUMNS: dict[str, list[str]] = {
     "Projects": [
         "Project", "Area", "Direction", "Status", "Repo", "Next actions", *_BOOKKEEPING
     ],
-    "Actions": ["Name", "Action Status", "Due", "Project", "Checkbox", *_BOOKKEEPING],
+    "Actions": ["Name", "Action Status", "Due", "Project", *_BOOKKEEPING],
 }
 
 KIND_TO_TAB = {"area": "Areas", "project": "Projects", "action": "Actions"}

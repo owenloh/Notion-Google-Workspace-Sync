@@ -15,7 +15,6 @@ def test_record_to_row_orders_columns():
         "Action Status": "Next",
         "Due": "2026-06-25",
         "Project": ["PourDynamics engine"],
-        "Checkbox": "false",
         "Doc": "",
         "_notion_id": "abc",
         "_last_edited": "2026-06-21",
@@ -23,7 +22,7 @@ def test_record_to_row_orders_columns():
     }
     row = record_to_row("Actions", rec)
     assert row == [
-        "Email Bob", "Next", "2026-06-25", "PourDynamics engine", "false",
+        "Email Bob", "Next", "2026-06-25", "PourDynamics engine",
         "", "abc", "2026-06-21", "deadbeef",
     ]
 

@@ -38,7 +38,7 @@ The title field name differs by database: use Name for an action or an area, but
 use Project (not Name) for a project. Always read the Properties per database
 section in _Commands for the exact title and property names before creating a row.
 
-You can: add an action, project or subpage; set status, due date, checkbox or
+You can: add an action, project or subpage; set status, due date or
 relation; append a note; rewrite a page (read its mirror Doc, then send an
 update_content request with the old text and your refined text); and add, complete
 or clear my Microsoft To Do in-tray.

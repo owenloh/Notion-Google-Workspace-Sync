@@ -35,7 +35,6 @@ PROPERTY_SCHEMA: dict[str, dict[str, str]] = {
         "Action Status": "status",
         "Due": "date",
         "Project": "relation",
-        "Checkbox": "checkbox",
     },
 }
 

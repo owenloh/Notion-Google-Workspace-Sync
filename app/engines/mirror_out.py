@@ -531,10 +531,10 @@ def _is_active(item: NotionItem) -> bool:
     """Whether an item belongs on the voice surface (_Dashboard/_Commands).
 
     All Areas and Projects are kept. Only **completed Actions** are dropped — those
-    marked Done or with the checkbox ticked — to bound growth as actions pile up
-    (they still live in the _Notion Index sheet).
+    whose `Action Status` is `Done` — to bound growth as actions pile up (they
+    still live in the _Notion Index sheet).
     """
     if item.kind == "action":
         props = item.properties or {}
-        return (props.get("Action Status") or "") != "Done" and not props.get("Checkbox")
+        return (props.get("Action Status") or "") != "Done"
     return True
