@@ -24,7 +24,7 @@ def world():
     )
     action = make_item(
         "t1", "action", "Email Bob",
-        properties={"Name": "Email Bob", "Action Status": "Next", "Checkbox": False},
+        properties={"Name": "Email Bob", "Action Status": "Next"},
         relations={"Project": ["p1"]},
     )
     child = make_item("c1", "page", "Spec", parent_id="p1")
@@ -270,30 +270,26 @@ def test_reconcile_spine_removes_deleted_spine_item(session, settings, world):
 
 
 def test_dashboard_keeps_areas_projects_drops_done_actions(session, settings):
-    """_Dashboard lists all Areas/Projects but omits Done / checkboxed Actions."""
+    """_Dashboard lists all Areas/Projects but omits Done Actions."""
     area = make_item("a1", "area", "Retired Area",
                      properties={"Name": "Retired Area", "Status": "Retired"})
     proj = make_item("p1", "project", "Done Project",
                      properties={"Project": "Done Project", "Status": "Complete"},
                      relations={"Area": ["a1"]})
     open_act = make_item("t1", "action", "Open task",
-                         properties={"Name": "Open task", "Action Status": "Next",
-                                     "Checkbox": False}, relations={})
+                         properties={"Name": "Open task", "Action Status": "Next"}, relations={})
     done_act = make_item("t2", "action", "Done task",
                          properties={"Name": "Done task", "Action Status": "Done"}, relations={})
-    ticked_act = make_item("t3", "action", "Ticked task",
-                           properties={"Name": "Ticked task", "Action Status": "Next",
-                                       "Checkbox": True}, relations={})
-    items = {"a1": area, "p1": proj, "t1": open_act, "t2": done_act, "t3": ticked_act}
+    items = {"a1": area, "p1": proj, "t1": open_act, "t2": done_act}
     notion = FakeNotionSource(items, {k: "" for k in items}, {},
-                              spine_ids=["a1", "p1", "t1", "t2", "t3"], loose_ids=[])
+                              spine_ids=["a1", "p1", "t1", "t2"], loose_ids=[])
     google = FakeGoogleMirror()
     MirrorOut(session, notion, google, settings).sync_all()
 
     dash = next(google.docs[d] for d, (n, _) in google.doc_meta.items() if n == "_Dashboard")
     assert "Retired Area" in dash and "Done Project" in dash   # areas/projects always kept
     assert "Open task" in dash                                  # open action kept
-    assert "Done task" not in dash and "Ticked task" not in dash  # completed dropped
+    assert "Done task" not in dash                              # completed dropped
 
 
 def test_prune_keeps_unsorted_container_holding_tracked_projects(session, settings):

@@ -48,7 +48,7 @@ _BOOKKEEPING = ["Doc", "_notion_id", "_last_edited", "_hash"]
 TAB_COLUMNS: dict[str, list[str]] = {
     "Areas": ["Name", "Status", "Type", "Standards", "Projects", *_BOOKKEEPING],
     "Projects": ["Project", "Area", "Direction", "Status", "Repo", "Next actions", *_BOOKKEEPING],
-    "Actions": ["Name", "Action Status", "Due", "Project", "Checkbox", *_BOOKKEEPING],
+    "Actions": ["Name", "Action Status", "Due", "Project", *_BOOKKEEPING],
 }
 
 

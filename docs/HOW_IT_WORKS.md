@@ -87,7 +87,7 @@ in the same folder); the name + id let Gemini locate it via `_Dashboard`.
 ## Limitations (know these)
 
 - **Actions have no body/sub-pages mirrored.** Actions are sheet rows (name, status,
-  due, project, checkbox). Notes or sub-pages *inside* an action are **not** reflected
+  due, project). Notes or sub-pages *inside* an action are **not** reflected
   (the crawl recurses only areas/projects/loose roots). Parentless actions are fine —
   still a row.
 - **No delete/archive by voice** — the Alistair API has no such endpoint (`✗

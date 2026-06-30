@@ -153,7 +153,7 @@ guarded relay → Alistair API. One JSON request per task.
 | --- | --- | --- |
 | **Read** anything | reads the mirror Docs | `_Dashboard`, `_Commands`, per-page `.gdoc`, `_Intray` |
 | **Create** action / project / sub-page | `create-pages` | `/api/notion/create-pages` |
-| **Set properties** (status, due, checkbox, relation) | `update_properties` | `/api/notion/update-page` |
+| **Set properties** (status, due, relation) | `update_properties` | `/api/notion/update-page` |
 | **Append a note** to a body | `insert_content` | `/api/notion/update-page` |
 | **Edit / rewrite page text** | `update_content` (`old_str`→`new_str`) | `/api/notion/update-page` |
 | **Microsoft To-Do** add / complete / clear | `add` / `done` / `delete` | `/api/intray` |
