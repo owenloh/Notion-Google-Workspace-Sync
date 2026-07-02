@@ -186,6 +186,39 @@ def test_get_child_page_ids_finds_pages_nested_in_columns():
     assert "grandchild" not in ids  # did not descend into a child page
 
 
+def test_collect_child_page_ids_from_tree_no_descent_into_pages():
+    # collect_child_page_ids walks a pre-fetched tree's attached children, finds
+    # nested pages, and never descends into a child_page (mirrored on its own).
+    tree = [
+        {"type": "child_page", "id": "top"},
+        {"type": "column_list", "children": [
+            {"type": "column", "children": [{"type": "child_page", "id": "col-page"}]},
+        ]},
+        # Even if a child_page carried children, we must not walk into them.
+        {"type": "child_page", "id": "with-kids",
+         "children": [{"type": "child_page", "id": "should-not-appear"}]},
+    ]
+    assert nread.collect_child_page_ids(tree) == ["top", "col-page", "with-kids"]
+
+
+def test_get_body_and_child_page_ids_single_fetch():
+    # One block-tree fetch yields both the rendered body and nested child ids.
+    children_by_id = {
+        "pg": [
+            {"id": "para", "type": "paragraph", "has_children": False,
+             "paragraph": {"rich_text": _rt("hello body")}},
+            {"id": "col", "type": "column_list", "has_children": True},
+        ],
+        "col": [{"id": "c", "type": "column", "has_children": True}],
+        "c": [{"id": "sub", "type": "child_page", "has_children": False,
+               "child_page": {"title": "Sub"}}],
+    }
+    client = _FakeClient(children_by_id)
+    md, ids = nread.get_body_and_child_page_ids(client, "pg")
+    assert "hello body" in md
+    assert ids == ["sub"]
+
+
 def test_child_page_rendered_as_marker_with_name():
     # The sub-page is mirrored as its own Doc, but the parent body keeps a named
     # marker (+ id) so Gemini knows it sits here and can find that Doc.
