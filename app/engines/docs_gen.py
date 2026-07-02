@@ -128,8 +128,9 @@ def build_commands_md(
         "```",
         "Field names are exact and the **title field differs per database**: it is",
         "`Name` for Actions and Areas, but **`Project`** for Projects (see 'Properties",
-        "per database' below). For Actions: `Action Status` (Next/Waiting/Someday/Done —",
-        "not `Status`/`To Do`), `Project` = array of ids, `date:Due:start` for the due date.",
+        "per database' below). For Actions: `Action Status` (Next/In progress/Waiting/",
+        "Someday/Done — not `Status`/`To Do`), `Project` = array of ids, `date:Due:start`",
+        "for the due date. `In progress` = actively being worked now; `Done` = complete.",
         "",
         "## Allowed paths (write-only)",
     ]
@@ -155,8 +156,8 @@ def build_commands_md(
         "  `Status` Active/Someday/Complete/Dropped; `Area` = `[\"<area page id>\"]`;",
         "  `Direction` (text); `Repo` (url).",
         "- **Actions** (`collection://2ebc58c5-…`): title `Name`; `Action Status`",
-        "  Next/Waiting/Someday/Done (`Done` marks it complete); `date:Due:start`;",
-        "  `Project` = `[\"<project page id>\"]`.",
+        "  Next/In progress/Waiting/Someday/Done (`In progress` = doing it now, `Done`",
+        "  marks it complete); `date:Due:start`; `Project` = `[\"<project page id>\"]`.",
         "",
         "## Property value encoding",
         "- Dates: `\"date:<Prop>:start\"` (+ optional `\"date:<Prop>:end\"`,",
@@ -164,7 +165,7 @@ def build_commands_md(
         "- Relation (e.g. `Project`): an array of Notion page ids — `[\"<page id>\"]`.",
         "- A property literally named `id` or `url`: prefix with `userDefined:`.",
         "- Status enums — Area: Active/Paused/Retired · Project: Active/Someday/Complete/",
-        "  Dropped · Action Status: Next/Waiting/Someday/Done.",
+        "  Dropped · Action Status: Next/In progress/Waiting/Someday/Done.",
         "",
         "## Example — add an action (create-pages)",
         "```",
@@ -209,17 +210,20 @@ def build_commands_md(
         "",
         "## Example — edit/rewrite text (update-page, targeted search-replace)",
         "First read the page's mirror Doc and copy the **exact** existing text. "
-        "`update_content` finds `old_str` and replaces it with `new_str` (put the old "
-        "text inside `new_str` to append rather than overwrite; an empty `new_str` "
-        "deletes that span). It will NOT delete nested sub-pages — safe, unlike "
-        "`replace_content`.",
+        "`update_content` takes a `content_updates` array of `{old_str, new_str}` edits: "
+        "each finds `old_str` and replaces it with `new_str` (put the old text inside "
+        "`new_str` to append rather than overwrite; an empty `new_str` deletes that "
+        "span). It is fail-safe — it ERRORS if `old_str` matches more than once (make it "
+        "unique, or the whole edit is rejected), spans block boundaries, or would delete "
+        "a sub-page. It will NOT clobber the page, unlike `replace_content`.",
         "```",
         '{ "path": "/api/notion/update-page",',
         '  "body": {',
         '    "page_id": "<page id>",',
         '    "command": "update_content",',
-        '    "old_str": "the exact text that already exists on the page",',
-        '    "new_str": "the refined text that replaces it" } }',
+        '    "content_updates": [',
+        '      { "old_str": "the exact text that already exists on the page",',
+        '        "new_str": "the refined text that replaces it" } ] } }',
         "```",
         "",
         "## Microsoft To-Do in-tray (quick capture)",

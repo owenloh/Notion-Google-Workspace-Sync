@@ -226,9 +226,41 @@ def get_body_markdown(client: NotionClient, page_id: str) -> str:
 
 
 def get_child_page_ids(client: NotionClient, page_id: str) -> list[str]:
-    """Return ids of block-level child pages directly under ``page_id``."""
-    return [
-        b["id"]
-        for b in get_block_children(client, page_id)
-        if b.get("type") == "child_page"
-    ]
+    """Return ids of child pages under ``page_id``, including ones nested inside
+    layout/container blocks (columns, toggles, callouts, quotes, …).
+
+    Subpages are frequently placed inside a ``column_list``/``column`` or a toggle
+    rather than as direct children of the page (e.g. the Library hub lays its
+    references out in three columns). A one-level scan misses those entirely, so
+    they never get mirrored. We walk the block subtree and collect every
+    ``child_page`` id, but do NOT descend *into* a child page or child database —
+    a subpage is mirrored as its own item and its own children are recursed when
+    that item is processed. Depth-limited (same guard as ``_fetch_block_tree``);
+    an unreadable container's children are skipped, not fatal.
+    """
+    found: list[str] = []
+    seen_blocks: set[str] = set()
+
+    def walk(block_id: str, depth: int) -> None:
+        if depth > _MAX_BLOCK_DEPTH:
+            return
+        for b in get_block_children(client, block_id):
+            btype = b.get("type")
+            if btype == "child_page":
+                found.append(b["id"])  # mirrored as its own item; don't descend
+                continue
+            if btype == "child_database":
+                continue
+            bid = b.get("id")
+            if b.get("has_children") and bid and bid not in seen_blocks:
+                seen_blocks.add(bid)
+                try:
+                    walk(bid, depth + 1)
+                except httpx.HTTPStatusError as exc:
+                    log.warning(
+                        "skipping unreadable children of %s block %s: %s",
+                        btype, bid, exc,
+                    )
+
+    walk(page_id, 0)
+    return found

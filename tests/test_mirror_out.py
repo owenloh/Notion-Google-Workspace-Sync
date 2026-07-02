@@ -280,15 +280,19 @@ def test_dashboard_keeps_areas_projects_drops_done_actions(session, settings):
                          properties={"Name": "Open task", "Action Status": "Next"}, relations={})
     done_act = make_item("t2", "action", "Done task",
                          properties={"Name": "Done task", "Action Status": "Done"}, relations={})
-    items = {"a1": area, "p1": proj, "t1": open_act, "t2": done_act}
+    wip_act = make_item("t3", "action", "Doing task",
+                        properties={"Name": "Doing task", "Action Status": "In progress"},
+                        relations={})
+    items = {"a1": area, "p1": proj, "t1": open_act, "t2": done_act, "t3": wip_act}
     notion = FakeNotionSource(items, {k: "" for k in items}, {},
-                              spine_ids=["a1", "p1", "t1", "t2"], loose_ids=[])
+                              spine_ids=["a1", "p1", "t1", "t2", "t3"], loose_ids=[])
     google = FakeGoogleMirror()
     MirrorOut(session, notion, google, settings).sync_all()
 
     dash = next(google.docs[d] for d, (n, _) in google.doc_meta.items() if n == "_Dashboard")
     assert "Retired Area" in dash and "Done Project" in dash   # areas/projects always kept
     assert "Open task" in dash                                  # open action kept
+    assert "Doing task" in dash                                 # In progress kept (active lane)
     assert "Done task" not in dash                              # completed dropped
 
 
