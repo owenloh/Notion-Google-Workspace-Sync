@@ -56,8 +56,12 @@ Do not reintroduce Google→Notion content sync. That was removed on purpose.
     "update_properties|insert_content|update_content|replace_content", "properties":
     {...}, "content": "<md>"}`. `update_properties` sets status/due/fields,
     `insert_content` appends a note (`content`). `update_content` is a targeted
-    search-replace — `{"old_str": "<exact existing text>", "new_str": "<replacement>"}`
-    (empty `new_str` deletes that span; confirmed via `skill/notion-master`). **Never
+    search-replace — now `{"content_updates": [{"old_str": "<exact existing text>",
+    "new_str": "<replacement>"}]}` (an ARRAY of edits, changed 2026-07; empty
+    `new_str` deletes that span). It is fail-safe: errors on multi-match (unless
+    `replace_all_matches:true`), cross-block spans (`allow_cross_block:true`), or
+    sub-page deletion (`allow_deleting_content:true`); confirmed via
+    `skill/notion-master`. **Never
     `replace_content`** — body-clobber
     footgun (API guards it with `allow_deleting_content`; the relay additionally
     blocks it unless `force:true`). The relay guard reads the `command` field.
@@ -90,8 +94,10 @@ Three linked databases (data-source ids):
 - **Projects** `f0ea8841-ca74-47b7-a28a-0b367bca8c41` — Project, Area(→Areas),
   Direction, Status (Active/Someday/Complete/Dropped), Repo, Next actions(→Actions)
 - **Actions** `1d3eb1dd-2803-4692-a4d5-6ca9709ae570` — Name, Action Status
-  (Next/Waiting/Someday/Done — `Done` is the sole "completed" signal), Due,
-  Project(→Projects). (No Checkbox — removed; status replaces it.)
+  (Next/In progress/Waiting/Someday/Done — `In progress` = active-now lane,
+  `Done` is the sole "completed" signal; `Dropped` items are deleted not tagged),
+  Due, Project(→Projects). Plus auto/rollup fields the mirror ignores: `Assignee`
+  (people), `Project Status` (rollup), `Area (auto)` (rollup). (No Checkbox.)
 
 Loose pages (mirrored as items, each in its own section folder; children recursed):
 Briefing "Alistair's Brief" `3806f0cc-dd76-80bb-9e16-fcce720de5ee`; References

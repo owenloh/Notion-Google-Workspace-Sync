@@ -156,6 +156,36 @@ def test_column_container_children_render():
     assert "Colpage" in md                   # child_page marker inside a column
 
 
+def test_get_child_page_ids_finds_pages_nested_in_columns():
+    # Regression: subpages laid out inside column_list/column (like the Library
+    # hub) were missed because the scan was one level deep, so they never mirrored.
+    children_by_id = {
+        "lib": [
+            {"id": "direct-1", "type": "child_page", "has_children": True},
+            {"id": "collist", "type": "column_list", "has_children": True},
+            {"id": "para", "type": "paragraph", "has_children": False},
+        ],
+        "collist": [
+            {"id": "col-a", "type": "column", "has_children": True},
+            {"id": "col-b", "type": "column", "has_children": True},
+        ],
+        "col-a": [
+            {"id": "h4", "type": "heading_4", "has_children": False},
+            {"id": "nested-1", "type": "child_page", "has_children": True},
+            {"id": "nested-2", "type": "child_page", "has_children": True},
+        ],
+        "col-b": [
+            {"id": "nested-3", "type": "child_page", "has_children": True},
+        ],
+        # A child_page's OWN children must NOT be walked (mirrored as its own item).
+        "nested-1": [{"id": "grandchild", "type": "child_page", "has_children": True}],
+    }
+    client = _FakeClient(children_by_id)
+    ids = nread.get_child_page_ids(client, "lib")
+    assert set(ids) == {"direct-1", "nested-1", "nested-2", "nested-3"}
+    assert "grandchild" not in ids  # did not descend into a child page
+
+
 def test_child_page_rendered_as_marker_with_name():
     # The sub-page is mirrored as its own Doc, but the parent body keeps a named
     # marker (+ id) so Gemini knows it sits here and can find that Doc.

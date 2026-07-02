@@ -155,13 +155,14 @@ guarded relay → Alistair API. One JSON request per task.
 | **Create** action / project / sub-page | `create-pages` | `/api/notion/create-pages` |
 | **Set properties** (status, due, relation) | `update_properties` | `/api/notion/update-page` |
 | **Append a note** to a body | `insert_content` | `/api/notion/update-page` |
-| **Edit / rewrite page text** | `update_content` (`old_str`→`new_str`) | `/api/notion/update-page` |
+| **Edit / rewrite page text** | `update_content` (`content_updates: [{old_str, new_str}]`) | `/api/notion/update-page` |
 | **Microsoft To-Do** add / complete / clear | `add` / `done` / `delete` | `/api/intray` |
 
 ### Editing/rewriting a page (e.g. "summarise this gibberish")
-Gemini reads the page's mirror Doc → summarises → sends `update_content` with the
-old text as `old_str` and the refined text as `new_str`. This is a real content
-replacement and is **safe** (it won't delete nested sub-pages). It needs the old
+Gemini reads the page's mirror Doc → summarises → sends `update_content` with a
+`content_updates` array of `{old_str, new_str}` edits (old text → refined text).
+This is a real content replacement and is **safe** (fail-safe: it errors on a
+multi-match/cross-block/sub-page-delete rather than clobbering). It needs the old
 text matched exactly, so it's reliable for short/medium notes; long messy pages may
 need a couple of tries. A blind whole-body wipe (`replace_content`) is **blocked**
 (see below).
