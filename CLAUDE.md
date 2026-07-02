@@ -160,6 +160,7 @@ app/
   connectors/
     notion/{client,read,write}.py   read recurses block tree; write.py INACTIVE (relay does writes)
     google/{auth,drive,docs,sheets,tasks}.py   OAuth incl. Tasks scope; tasks.py = command inbox
+    google/health.py   process-wide OAuth-refresh health (invalid_grant → /health degraded)
     relay.py         guarded relay to Alistair API + fetch_skill_docs
   engines/
     mirror_out.py    one-way reflection + _Dashboard/_Commands generation (hash-gated)
@@ -191,7 +192,11 @@ tests/                pytest; in-memory fakes (FakeGoogleMirror/FakeNotionSource
   ledger id (rename/move/dup) + deletion detection (tombstone). MS To-Do in-tray mirror.
 - ⏭️ **Phase 2 (future):** Notion webhook for near-instant hand-edit reflection (manual
   edits currently ~3 min via `poll_notion`); persist self-healed folder/sheet env ids;
-  `/admin/lookup` (notion_id→drive ids); auth-expiry handling. **Known relay quirk:**
+  `/admin/lookup` (notion_id→drive ids). **Auth-expiry handling** is now surfaced
+  (an expired/revoked OAuth refresh token → `invalid_grant` is caught in
+  `google/_retry.py`, flips `/health` to `degraded` with remediation, and logs one
+  line instead of a per-cycle traceback); actual re-mint is still manual
+  (`scripts/bootstrap.py auth`) since headless OAuth isn't possible. **Known relay quirk:**
   `update_properties {"title":…}` on a non-DB subpage *clears* the title instead of
   renaming — investigate the title format before relying on subpage renames.
 - ✅ Implemented & passing: rich one-way read rendering + recursive fetch; relay

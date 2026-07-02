@@ -12,8 +12,10 @@ import threading
 import time
 
 import httplib2
+from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 
+from app.connectors.google import health
 from app.logging import get_logger
 
 log = get_logger(__name__)
@@ -34,7 +36,15 @@ def execute(request, attempts: int = 6):
     for attempt in range(attempts):
         try:
             with _GOOGLE_LOCK:
-                return request.execute()
+                result = request.execute()
+            health.mark_ok()
+            return result
+        except RefreshError as exc:
+            # The OAuth refresh token is expired/revoked — retrying won't help and
+            # every Google call will fail the same way. Record it once (for /health)
+            # and raise a clear, actionable error instead of the refresh traceback.
+            health.mark_auth_error(str(exc))
+            raise health.GoogleAuthError(health.REMEDIATION) from exc
         except HttpError as exc:
             status = exc.resp.status if getattr(exc, "resp", None) else None
             if status in _RETRY_STATUSES and attempt < attempts - 1:

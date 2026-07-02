@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
+from app.connectors.google.health import GoogleAuthError
 from app.logging import get_logger
 from app.scheduler import jobs
 
@@ -19,6 +20,10 @@ def _guard(fn):
     def wrapped():
         try:
             fn()
+        except GoogleAuthError as exc:
+            # Expired/revoked OAuth token: every cycle would fail identically, so
+            # log one actionable line (no traceback spam). /health reports it too.
+            log.error("Scheduled job %s skipped: %s", fn.__name__, exc)
         except Exception:  # noqa: BLE001
             log.exception("Scheduled job %s failed", fn.__name__)
 
