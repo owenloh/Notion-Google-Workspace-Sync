@@ -216,6 +216,42 @@ def _fetch_block_tree(client: NotionClient, block_id: str, depth: int = 0) -> li
     return blocks
 
 
+def collect_child_page_ids(blocks: list[dict]) -> list[str]:
+    """Collect ``child_page`` ids anywhere in an already-fetched block tree.
+
+    ``_fetch_block_tree`` attaches ``children`` to containers (columns, toggles,
+    callouts, quotes, …) but never to child pages (they're in ``_NO_RECURSE``), so
+    walking the attached ``children`` naturally finds subpages nested inside a
+    layout without descending *into* a subpage — that subpage is mirrored as its
+    own item and its own children are recursed when it is processed.
+    """
+    found: list[str] = []
+
+    def walk(bs: list[dict]) -> None:
+        for b in bs:
+            if b.get("type") == "child_page":
+                found.append(b["id"])
+            else:
+                kids = b.get("children")
+                if kids:
+                    walk(kids)
+
+    walk(blocks)
+    return found
+
+
+def get_body_and_child_page_ids(client: NotionClient, page_id: str) -> tuple[str, list[str]]:
+    """Fetch a page's block tree ONCE and derive both the read Markdown and the
+    ids of child pages nested anywhere within it (columns/toggles included).
+
+    A single traversal per page avoids fetching the same subtree twice (body +
+    child-page discovery), which otherwise doubles Notion API calls during a full
+    reconcile and trips rate limits.
+    """
+    tree = _fetch_block_tree(client, page_id)
+    return notion_blocks_to_markdown(tree), collect_child_page_ids(tree)
+
+
 def get_body_markdown(client: NotionClient, page_id: str) -> str:
     """Fetch a page's body (recursively, incl. nested blocks) as read Markdown.
 
@@ -227,40 +263,12 @@ def get_body_markdown(client: NotionClient, page_id: str) -> str:
 
 def get_child_page_ids(client: NotionClient, page_id: str) -> list[str]:
     """Return ids of child pages under ``page_id``, including ones nested inside
-    layout/container blocks (columns, toggles, callouts, quotes, …).
+    layout/container blocks (columns, toggles, callouts, …).
 
     Subpages are frequently placed inside a ``column_list``/``column`` or a toggle
     rather than as direct children of the page (e.g. the Library hub lays its
-    references out in three columns). A one-level scan misses those entirely, so
-    they never get mirrored. We walk the block subtree and collect every
-    ``child_page`` id, but do NOT descend *into* a child page or child database —
-    a subpage is mirrored as its own item and its own children are recursed when
-    that item is processed. Depth-limited (same guard as ``_fetch_block_tree``);
-    an unreadable container's children are skipped, not fatal.
+    references out in three columns); a one-level scan misses those entirely so
+    they never get mirrored. Prefer :func:`get_body_and_child_page_ids` when the
+    body is also needed (one fetch instead of two).
     """
-    found: list[str] = []
-    seen_blocks: set[str] = set()
-
-    def walk(block_id: str, depth: int) -> None:
-        if depth > _MAX_BLOCK_DEPTH:
-            return
-        for b in get_block_children(client, block_id):
-            btype = b.get("type")
-            if btype == "child_page":
-                found.append(b["id"])  # mirrored as its own item; don't descend
-                continue
-            if btype == "child_database":
-                continue
-            bid = b.get("id")
-            if b.get("has_children") and bid and bid not in seen_blocks:
-                seen_blocks.add(bid)
-                try:
-                    walk(bid, depth + 1)
-                except httpx.HTTPStatusError as exc:
-                    log.warning(
-                        "skipping unreadable children of %s block %s: %s",
-                        btype, bid, exc,
-                    )
-
-    walk(page_id, 0)
-    return found
+    return collect_child_page_ids(_fetch_block_tree(client, page_id))

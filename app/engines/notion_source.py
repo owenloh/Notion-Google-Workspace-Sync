@@ -52,6 +52,10 @@ class NotionSource:
     def child_page_ids(self, page_id: str) -> list[str]:
         return nread.get_child_page_ids(self.client, page_id)
 
+    def body_and_child_ids(self, page_id: str) -> tuple[str, list[str]]:
+        """Body Markdown + nested child-page ids from ONE block-tree fetch."""
+        return nread.get_body_and_child_page_ids(self.client, page_id)
+
     def get_item(self, page_id: str) -> NotionItem:
         return nread.get_page(self.client, page_id)
 

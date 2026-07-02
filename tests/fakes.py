@@ -189,6 +189,9 @@ class FakeNotionSource:
     def child_page_ids(self, page_id: str) -> list[str]:
         return self.children.get(page_id, [])
 
+    def body_and_child_ids(self, page_id: str) -> tuple[str, list[str]]:
+        return self.bodies.get(page_id, ""), self.children.get(page_id, [])
+
     def get_item(self, page_id: str) -> NotionItem:
         return self.items[page_id]
 

@@ -47,6 +47,9 @@ class MirrorOut:
         # notion_id -> drive folder id, for nesting projects under areas and
         # recursing child pages under their parent.
         self._folder_of: dict[str, str] = {}
+        # notion_id -> child-page ids discovered while fetching that page's body,
+        # so the recursion reuses them instead of re-fetching the subtree.
+        self._child_ids_of: dict[str, list[str]] = {}
 
     # --- public entry points -------------------------------------------------
 
@@ -337,12 +340,16 @@ class MirrorOut:
         prop_hash = property_hash(item.kind, record) if item.kind in _TAB else None
         # Body fetch is best-effort: a page whose body can't be read must not
         # abort the whole reconcile, so degrade to a placeholder and carry on.
+        # One fetch yields both the body Markdown and the ids of child pages
+        # nested anywhere in it (columns/toggles), which the recursion reuses.
         try:
-            markdown = self.notion.body_markdown(item.notion_id)
+            markdown, child_ids = self.notion.body_and_child_ids(item.notion_id)
         except httpx.HTTPError as exc:
             log.warning("body unavailable for %s (%s); mirroring metadata only: %s",
                         item.title, item.notion_id, exc)
             markdown = f"_(body could not be read from Notion: {exc})_"
+            child_ids = []
+        self._child_ids_of[_norm(item.notion_id)] = child_ids
         b_hash = body_hash(markdown)
 
         pair = repo.upsert_pair(
@@ -445,11 +452,18 @@ class MirrorOut:
             parent_folder = self._folder_of.get(_norm(pid))
             if not parent_folder:
                 continue
-            try:
-                child_ids = self.notion.child_page_ids(pid)
-            except Exception as exc:  # noqa: BLE001 — transient/SSL or bad page
-                log.warning("could not list child pages of %s; skipping subtree: %s", pid, exc)
-                continue
+            # Prefer the ids captured when this page's body was fetched (no extra
+            # Notion call); fall back to a dedicated fetch only if unavailable.
+            if _norm(pid) in self._child_ids_of:
+                child_ids = self._child_ids_of[_norm(pid)]
+            else:
+                try:
+                    child_ids = self.notion.child_page_ids(pid)
+                except Exception as exc:  # noqa: BLE001 — transient/SSL or bad page
+                    log.warning(
+                        "could not list child pages of %s; skipping subtree: %s", pid, exc
+                    )
+                    continue
             for child_id in child_ids:
                 if seen is not None:
                     seen.add(_norm(child_id))  # enumerated → not a deletion candidate
