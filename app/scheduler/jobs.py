@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 
+from app.connectors.google.health import GoogleAuthError
 from app.connectors.notion.read import NotionItem
 from app.core.tombstone import purge_expired
 from app.engines.commands import CommandExecutor
@@ -62,6 +63,8 @@ def poll_incremental(rt: Runtime | None = None) -> int:
                 try:
                     engine.mirror_item(it)
                     done += 1
+                except GoogleAuthError:
+                    raise  # auth is dead for every item; abort to the guard
                 except Exception:  # noqa: BLE001 — per-item isolation
                     log.exception("incremental reflect failed for %s", it.notion_id)
             # Keep the catalog fresh AND catch spine deletions/archives every cycle
@@ -69,10 +72,14 @@ def poll_incremental(rt: Runtime | None = None) -> int:
             # poll, not only at the daily reconcile.
             try:
                 engine.reconcile_spine()
+            except GoogleAuthError:
+                raise  # auth is dead; skip the rest and surface one line via the guard
             except Exception:  # noqa: BLE001 — best-effort
                 log.exception("spine reconcile in poll_incremental failed")
             try:
                 engine.refresh_intray()
+            except GoogleAuthError:
+                raise
             except Exception:  # noqa: BLE001 — best-effort
                 log.exception("intray refresh in poll_incremental failed")
             newest = max((it.last_edited_time or "" for it in changed), default=watermark)

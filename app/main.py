@@ -81,8 +81,18 @@ app.include_router(notion_webhook.router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, object]:
+    """Liveness plus Google auth health.
+
+    Always 200 (the app is serving), but ``google_auth.ok == false`` flags an
+    expired/revoked OAuth refresh token — the usual cause of the sync silently
+    "stopping": the app is up but every Google call fails until the token is
+    re-minted. ``google_auth.remediation`` says how to fix it.
+    """
+    from app.connectors.google.health import status as google_auth_status
+
+    auth = google_auth_status()
+    return {"status": "ok" if auth["ok"] else "degraded", "google_auth": auth}
 
 
 def _check_admin_key(provided: str | None) -> None:

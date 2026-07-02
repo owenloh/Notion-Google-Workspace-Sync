@@ -2,9 +2,10 @@
 
 import httplib2
 import pytest
+from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 
-from app.connectors.google import _retry
+from app.connectors.google import _retry, health
 
 
 class _Req:
@@ -65,3 +66,47 @@ def test_gives_up_after_attempts(monkeypatch):
     with pytest.raises(HttpError):
         _retry.execute(req, attempts=2)
     assert req.calls == 2
+
+
+class _RefreshReq:
+    """Fake request whose execute() fails token refresh (expired/revoked token)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def execute(self):
+        self.calls += 1
+        raise RefreshError("invalid_grant: Token has been expired or revoked.")
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_health():
+    health.mark_ok()
+    yield
+    health.mark_ok()
+
+
+def test_refresh_error_raises_google_auth_error_without_retrying(monkeypatch):
+    monkeypatch.setattr(_retry.time, "sleep", lambda *_: None)
+    req = _RefreshReq()
+    with pytest.raises(health.GoogleAuthError):
+        _retry.execute(req)
+    assert req.calls == 1  # not retried — a bad token never recovers on retry
+
+
+def test_refresh_error_marks_auth_health_down(monkeypatch):
+    monkeypatch.setattr(_retry.time, "sleep", lambda *_: None)
+    assert health.status()["ok"] is True
+    with pytest.raises(health.GoogleAuthError):
+        _retry.execute(_RefreshReq())
+    snap = health.status()
+    assert snap["ok"] is False
+    assert snap["since"] is not None
+    assert "remediation" in snap
+
+
+def test_success_clears_prior_auth_failure():
+    health.mark_auth_error("boom")
+    assert health.status()["ok"] is False
+    assert _retry.execute(_Req([])) == "ok"  # a clean call recovers the signal
+    assert health.status()["ok"] is True
